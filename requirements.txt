@@ -1,0 +1,64 @@
+# Binance External Gap Detector - Python Dependencies
+# =====================================================
+# Install with: pip install -r requirements.txt
+# Or with uv: uv pip install -r requirements.txt
+
+# ============================================================================
+# CORE DEPENDENCIES (Required for all scripts)
+# ============================================================================
+
+# WebSocket client for Binance Futures real-time data
+# Used by: all detector and trading bot scripts
+websockets>=12.0
+
+# Async HTTP client for Telegram notifications
+# Used by: all scripts for sending Telegram messages via HTTP API
+aiohttp>=3.9.0
+
+# Environment variable management from .env files
+# Used by: all scripts to load Telegram credentials
+python-dotenv>=1.0.0
+
+# ============================================================================
+# OPTIONAL DEPENDENCIES (For future enhancements)
+# ============================================================================
+
+# Uncomment if you need numerical computations or statistics
+# numpy>=1.24.0
+
+# Uncomment if you need data manipulation or CSV processing
+# pandas>=2.0.0
+
+# ============================================================================
+# INSTALLATION NOTES
+# ============================================================================
+# 1. Standard Installation:
+#    pip install -r requirements.txt
+#
+# 2. Fast Installation with uv (recommended):
+#    curl -LsSf https://astral.sh/uv/install.sh | sh
+#    uv pip install -r requirements.txt
+#
+# 3. Virtual Environment (recommended):
+#    python3 -m venv venv
+#    source venv/bin/activate  # Linux/Mac
+#    # or: venv\Scripts\activate  # Windows
+#    pip install -r requirements.txt
+#
+# 4. Upgrade Dependencies:
+#    pip install --upgrade -r requirements.txt
+#
+# 5. Check Installed Versions:
+#    pip list | grep -E "websockets|aiohttp|python-dotenv"
+#
+# ============================================================================
+# VERSION COMPATIBILITY
+# ============================================================================
+# Python Version: 3.9+ required (3.12+ recommended)
+# OS: Linux, macOS, Windows (WSL2 recommended for Windows)
+# Architecture: x86_64, ARM64 (Apple Silicon supported)
+#
+# Tested Configurations:
+# - Python 3.12 + Ubuntu 22.04 (WSL2)
+# - Python 3.11 + macOS 14 (Apple Silicon)
+# - Python 3.10 + Debian 12
