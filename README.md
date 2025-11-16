@@ -76,6 +76,203 @@ WebSocket connected to Binance Futures
 Waiting for first candle close...
 ```
 
+## Replit Deployment (24/7 Operation)
+
+The **V3 Replit Edition** (`binance_extgap_detector_v3_replit.py`) is optimized for 24/7 deployment on Replit Reserved VMs with command-line arguments instead of interactive prompts.
+
+### Why Use Replit?
+
+- ✅ **24/7 uptime** with Reserved VM ($20-30/month)
+- ✅ **No infrastructure management** - just click Run
+- ✅ **Built-in secrets management** - secure Telegram credentials
+- ✅ **Easy parameter changes** - edit `.replit` file without code changes
+- ✅ **Multiple instances** - run different symbols/timeframes on separate Repls
+
+### Prerequisites
+
+1. **Replit Account** - Sign up at [replit.com](https://replit.com)
+2. **Reserved VM** - Required for 24/7 operation (free tier sleeps after inactivity)
+3. **Telegram Bot** - Get token from [@BotFather](https://t.me/BotFather)
+4. **Chat ID** - Get from [@userinfobot](https://t.me/userinfobot)
+
+### Step-by-Step Deployment
+
+#### 1. Fork/Import Repository to Replit
+
+```bash
+# Option A: Import from GitHub
+1. Go to Replit.com
+2. Click "Create Repl"
+3. Select "Import from GitHub"
+4. Paste: https://github.com/PeterK1810/binance-extgap-detector
+5. Select "paradex_extgap" directory as root
+
+# Option B: Clone manually
+git clone https://github.com/PeterK1810/binance-extgap-detector.git
+cd paradex_extgap
+```
+
+#### 2. Configure Replit Secrets
+
+Navigate to **Tools** → **Secrets** in Replit and add:
+
+```
+TELEGRAM_BOT_TOKEN_EXTGAP_DETECTOR = your_bot_token_here
+TELEGRAM_CHAT_IDS_EXTGAP_DETECTOR = 123456789,-1001234567890
+INSTANCE_ID = REPLIT  # Optional: helps identify which instance sent notifications
+```
+
+**Important:** Replit Secrets are automatically injected as environment variables - no `.env` file needed!
+
+#### 3. Configure Run Parameters
+
+Edit the `.replit` file to set your desired configuration:
+
+```toml
+# Default configuration (BTCUSDT, 2m timeframe, 1h stats)
+run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "BTCUSDT", "--timeframe", "2m", "--stats-interval", "1h"]
+
+# Example: ETHUSDT on 5m timeframe with 30m stats
+run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "ETHUSDT", "--timeframe", "5m", "--stats-interval", "30m"]
+
+# Example: SOLUSDT on 3m timeframe with debug logging
+run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "SOLUSDT", "--timeframe", "3m", "--stats-interval", "1h", "--log-level", "DEBUG"]
+```
+
+#### 4. Install Dependencies
+
+Replit auto-installs from `requirements.txt`, but you can manually trigger:
+
+```bash
+pip install -r requirements.txt
+```
+
+Or use the Shell tab:
+```bash
+python3 -m pip install websockets aiohttp python-dotenv
+```
+
+#### 5. Run the Bot
+
+Click the **Run** button in Replit, or use the Shell:
+
+```bash
+python3 binance_extgap_detector_v3_replit.py --symbol BTCUSDT --timeframe 2m --stats-interval 1h
+```
+
+#### 6. Enable 24/7 Operation (Reserved VM)
+
+1. Go to Replit → **Resources** → **Reserved VM**
+2. Subscribe to Reserved VM plan ($20-30/month)
+3. Bot will run continuously without sleep
+
+**Note:** Free tier Repls sleep after 5 minutes of inactivity. Reserved VM is required for true 24/7 operation.
+
+### Multi-Timeframe Setup (Multiple Repls)
+
+To monitor multiple symbols or timeframes simultaneously:
+
+1. **Create separate Repl for each configuration:**
+   - Repl 1: `binance-extgap-btc-2m` → BTCUSDT 2m
+   - Repl 2: `binance-extgap-eth-5m` → ETHUSDT 5m
+   - Repl 3: `binance-extgap-sol-3m` → SOLUSDT 3m
+
+2. **Each Repl has its own `.replit` config:**
+   ```toml
+   # Repl 1: BTCUSDT 2m
+   run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "BTCUSDT", "--timeframe", "2m", "--stats-interval", "1h"]
+
+   # Repl 2: ETHUSDT 5m
+   run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "ETHUSDT", "--timeframe", "5m", "--stats-interval", "1h"]
+
+   # Repl 3: SOLUSDT 3m
+   run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "SOLUSDT", "--timeframe", "3m", "--stats-interval", "1h"]
+   ```
+
+3. **All Repls share same Telegram credentials** (or use different bots for different Repls)
+
+### Command-Line Options (V3 Replit)
+
+```bash
+python3 binance_extgap_detector_v3_replit.py --help
+
+Options:
+  --symbol SYMBOL           Trading symbol (default: BTCUSDT)
+                           Examples: ETHUSDT, SOLUSDT, BNBUSDT
+
+  --timeframe TIMEFRAME     Timeframe for gap detection (default: 2m)
+                           Examples: 1m, 2m, 3m, 5m, 15m, 1h
+
+  --stats-interval INTERVAL Statistics notification interval (default: 1h)
+                           Examples: 10m, 30m, 1h, 2h, 4h
+
+  --log-level LEVEL         Logging level (default: INFO)
+                           Choices: DEBUG, INFO, WARNING, ERROR
+```
+
+### Monitoring Your Replit Bot
+
+**View Logs:**
+- Click **Console** tab in Replit to see real-time logs
+- Look for: "✅ WebSocket connected", "🚨 GAP DETECTED", "📊 STATISTIQUES"
+
+**Check Telegram:**
+- Startup notification confirms bot is running
+- Gap detections arrive in real-time
+- Hourly stats keep you informed of performance
+
+**CSV Data:**
+- Navigate to `data/` folder in Replit file explorer
+- Download `extgap_v3_btcusdt_2m_gaps.csv` for gap history
+- Download `extgap_v3_btcusdt_2m_trades.csv` for P&L tracking
+
+### Replit vs Local Deployment
+
+| Feature | Replit Reserved VM | Local/VPS |
+|---------|-------------------|-----------|
+| **24/7 Uptime** | ✅ Built-in | ⚠️ Requires always-on machine |
+| **Setup Time** | ⚡ 5 minutes | 🕒 15-30 minutes |
+| **Cost** | $20-30/month | Free (electricity) or $5-10/month VPS |
+| **Secrets Management** | ✅ Replit Secrets | ⚙️ Manual `.env` file |
+| **Auto-Restart** | ✅ Yes | ⚠️ Requires systemd/screen |
+| **Multi-Instance** | ✅ Easy (multiple Repls) | ⚙️ Manual process management |
+| **Code Changes** | ✅ Edit in browser | 💻 Local editor + git push |
+
+### Troubleshooting Replit Deployment
+
+**Bot sleeps after 5 minutes:**
+- ❌ You're on free tier (requires HTTP traffic to stay awake)
+- ✅ Upgrade to Reserved VM for true 24/7 operation
+
+**No Telegram notifications:**
+- Check Replit Secrets are set: `TELEGRAM_BOT_TOKEN_EXTGAP_DETECTOR`, `TELEGRAM_CHAT_IDS_EXTGAP_DETECTOR`
+- Verify token with: `curl https://api.telegram.org/bot<YOUR_TOKEN>/getMe`
+- Check Console logs for "✅ Telegram notifications enabled"
+
+**Dependencies not installing:**
+- Click **Shell** tab and run: `pip install -r requirements.txt`
+- Check `replit.nix` has Python 3.11: `pkgs.python311`
+
+**Want to change timeframe without restarting:**
+- Edit `.replit` file → change `--timeframe` parameter
+- Click **Stop** then **Run** to apply changes
+- Bot will create new CSV files for the new timeframe
+
+### Cost Optimization
+
+**Single Reserved VM:**
+- Run 1 symbol/timeframe: $20-30/month
+- Recommended for focused strategy testing
+
+**Multiple Symbols on One Repl:**
+- Modify code to track multiple symbols concurrently (advanced)
+- More complex but saves on Reserved VM cost
+
+**Hybrid Approach:**
+- Run BTCUSDT on Replit (most important)
+- Run ETHUSDT/SOLUSDT on local machine or cheap VPS
+- Balance cost vs convenience
+
 ## Algorithm Overview
 
 ### What is an External Gap?
