@@ -1,0 +1,58 @@
+# Replit Configuration for Binance External Gap Detector V3
+# ==========================================================
+#
+# This file tells Replit how to run the gap detector bot.
+# Edit the 'run' command below to change parameters.
+
+# Main run command (executed when you click "Run" button)
+run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "BTCUSDT", "--timeframe", "2m", "--stats-interval", "1h"]
+
+# Language configuration
+[languages.python3]
+pattern = "**/*.py"
+
+[languages.python3.languageServer]
+start = "pylsp"
+
+# Environment variables (use Replit Secrets for sensitive data)
+[env]
+PYTHONPATH = "${PYTHONPATH}:${REPL_HOME}"
+PYTHONUNBUFFERED = "1"
+
+# Nix packages for Python environment
+[nix]
+channel = "stable-23_11"
+packages = ["python311", "python311Packages.pip"]
+
+# Deployment configuration
+[deployment]
+run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "BTCUSDT", "--timeframe", "2m", "--stats-interval", "1h"]
+deploymentTarget = "cloudrun"
+
+# How to modify parameters:
+# =========================
+#
+# 1. Change symbol:
+#    Replace "BTCUSDT" with "ETHUSDT", "SOLUSDT", etc.
+#
+# 2. Change timeframe:
+#    Replace "2m" with "1m", "3m", "5m", "15m", "1h", etc.
+#
+# 3. Change stats interval:
+#    Replace "1h" with "10m", "30m", "2h", "4h", etc.
+#
+# 4. Enable debug logging:
+#    Add "--log-level" "DEBUG" to the run command
+#
+# Example - Run ETHUSDT on 5m timeframe with 30m stats:
+#   run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "ETHUSDT", "--timeframe", "5m", "--stats-interval", "30m"]
+#
+# Example - Multiple instances (requires separate Repls):
+#   Repl 1: BTCUSDT 2m
+#   Repl 2: ETHUSDT 5m
+#   Repl 3: SOLUSDT 3m
+
+# Port configuration (not required for WebSocket-only bot, but good to have)
+[[ports]]
+localPort = 8080
+externalPort = 80

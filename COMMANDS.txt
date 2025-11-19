@@ -1,0 +1,384 @@
+# ============================================================================
+# EXTERNAL GAP INDICATOR - COMMAND REFERENCE
+# ============================================================================
+# Quick reference for all commands needed to operate the external gap indicator
+# System: Ubuntu/WSL compatible
+# ============================================================================
+
+# ============================================================================
+# NAVIGATION
+# ============================================================================
+
+# Go to external gap indicator directory from paradex-screener root
+cd paradex-bot-fvgreject/paradex_extgap
+
+# Go to external gap indicator from anywhere (WSL path)
+cd /mnt/c/Users/conna/Documents/C/Mes-Projets-Crypto/paradex-screener/paradex-bot-fvgreject/paradex_extgap
+
+# Go back to parent directory
+cd ..
+
+# Go to scripts directory (where other gap indicators are)
+cd ../scripts
+
+
+# ============================================================================
+# START BOT
+# ============================================================================
+
+# Start in background (recommended for production)
+./start_extgap_indicator.sh --bg
+
+# Start in foreground (for testing/debugging)
+./start_extgap_indicator.sh
+
+# Start with custom symbol
+./start_extgap_indicator.sh --symbol ETHUSDT --bg
+
+# Start with custom timeframe
+./start_extgap_indicator.sh --timeframe 15m --bg
+
+# Start with custom instance ID
+./start_extgap_indicator.sh --instance AWS-US-EAST --bg
+
+# Start with custom notional size
+./start_extgap_indicator.sh --notional 2000 --bg
+
+# Start with debug logging
+python3 binance_extgap_indicator_5m.py --log-level DEBUG
+
+# Start with all custom parameters
+python3 binance_extgap_indicator_5m.py \
+  --symbol ETHUSDT \
+  --timeframe 5m \
+  --notional 2000 \
+  --log-level INFO
+
+
+# ============================================================================
+# STOP BOT
+# ============================================================================
+
+# Stop the 5m indicator (default)
+./stop_extgap_indicator.sh
+
+# Stop specific timeframe
+./stop_extgap_indicator.sh --timeframe 15m
+
+# Force stop if graceful shutdown fails
+kill -9 $(cat binance_extgap_indicator_5m.pid)
+
+# Stop all Python processes (use with caution!)
+pkill -f binance_extgap_indicator
+
+
+# ============================================================================
+# STATUS CHECKS
+# ============================================================================
+
+# Check if indicator is running
+./status_extgap_indicator.sh
+
+# Check specific timeframe status
+./status_extgap_indicator.sh 15m
+
+# Check PID file manually
+cat binance_extgap_indicator_5m.pid
+
+# Check if process is running by PID
+ps -p $(cat binance_extgap_indicator_5m.pid)
+
+# List all running gap indicator processes
+ps aux | grep extgap
+
+# Check Python processes
+ps aux | grep python3
+
+
+# ============================================================================
+# LOGS
+# ============================================================================
+
+# View live logs (recommended)
+tail -f logs/extgap_indicator_5m.log
+
+# View last 50 lines
+tail -50 logs/extgap_indicator_5m.log
+
+# View last 100 lines
+tail -100 logs/extgap_indicator_5m.log
+
+# View all logs
+cat logs/extgap_indicator_5m.log
+
+# View only ERROR messages
+tail -f logs/extgap_indicator_5m.log | grep ERROR
+
+# View only INFO messages
+tail -f logs/extgap_indicator_5m.log | grep INFO
+
+# View recent errors (last 20)
+grep ERROR logs/extgap_indicator_5m.log | tail -20
+
+# Search logs for specific symbol
+grep "BTCUSDT" logs/extgap_indicator_5m.log
+
+# Search logs for gap detections
+grep "External Gap Detected" logs/extgap_indicator_5m.log
+
+# Search logs for trades
+grep "Entry Executed" logs/extgap_indicator_5m.log
+
+# Clear old logs (be careful!)
+> logs/extgap_indicator_5m.log
+
+
+# ============================================================================
+# DATA FILES
+# ============================================================================
+
+# View detected gaps
+cat data/binance_extgap_5m_gaps.csv
+
+# View last 10 gaps
+tail -10 data/binance_extgap_5m_gaps.csv
+
+# View all trades
+cat data/binance_extgap_5m_trades.csv
+
+# View last 10 trades
+tail -10 data/binance_extgap_5m_trades.csv
+
+# Count total gaps detected
+wc -l data/binance_extgap_5m_gaps.csv
+
+# Count total trades
+wc -l data/binance_extgap_5m_trades.csv
+
+# View gaps for specific symbol
+grep "BTCUSDT" data/binance_extgap_5m_gaps.csv
+
+# View only winning trades
+grep "WIN" data/binance_extgap_5m_trades.csv
+
+# View only losing trades
+grep "LOSS" data/binance_extgap_5m_trades.csv
+
+# View bullish gaps
+grep "bullish" data/binance_extgap_5m_gaps.csv
+
+# View bearish gaps
+grep "bearish" data/binance_extgap_5m_gaps.csv
+
+
+# ============================================================================
+# ENVIRONMENT & CONFIGURATION
+# ============================================================================
+
+# Check environment variables
+grep TELEGRAM ../.env
+
+# Check Telegram token for extgap
+grep TELEGRAM_BOT_TOKEN_EXTGAP_5M ../.env
+
+# Check instance ID
+grep INSTANCE_ID ../.env
+
+# Edit environment variables
+nano ../.env
+# or
+vi ../.env
+
+# Test Telegram credentials
+python3 -c "import os; from dotenv import load_dotenv; load_dotenv('../.env'); print(os.getenv('TELEGRAM_BOT_TOKEN_EXTGAP_5M'))"
+
+
+# ============================================================================
+# DIRECTORY MANAGEMENT
+# ============================================================================
+
+# Create necessary directories (if they don't exist)
+mkdir -p data logs
+
+# List all files
+ls -la
+
+# List only data files
+ls -la data/
+
+# List only log files
+ls -la logs/
+
+# Check disk usage
+du -h data/
+du -h logs/
+
+# Remove old data files (be careful!)
+rm data/binance_extgap_5m_gaps.csv
+rm data/binance_extgap_5m_trades.csv
+
+
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+
+# Remove stale PID file
+rm binance_extgap_indicator_5m.pid
+
+# Check if port is in use (if using web dashboard)
+netstat -tuln | grep 8081
+
+# Check Python version
+python3 --version
+
+# Check installed packages
+pip3 list | grep aiohttp
+pip3 list | grep websockets
+pip3 list | grep telegram
+
+# Test WebSocket connection to Binance
+curl -I https://fapi.binance.com/fapi/v1/ping
+
+# Check network connectivity
+ping -c 3 fapi.binance.com
+
+# Monitor CPU and memory usage
+top -p $(cat binance_extgap_indicator_5m.pid)
+
+# Check system resources
+htop
+
+
+# ============================================================================
+# MAINTENANCE
+# ============================================================================
+
+# Backup data files
+cp data/binance_extgap_5m_gaps.csv data/binance_extgap_5m_gaps.csv.backup
+cp data/binance_extgap_5m_trades.csv data/binance_extgap_5m_trades.csv.backup
+
+# Backup logs
+cp logs/extgap_indicator_5m.log logs/extgap_indicator_5m.log.backup
+
+# Archive old data (example: add date suffix)
+mv data/binance_extgap_5m_gaps.csv data/binance_extgap_5m_gaps_$(date +%Y%m%d).csv
+mv data/binance_extgap_5m_trades.csv data/binance_extgap_5m_trades_$(date +%Y%m%d).csv
+
+# Compress old logs
+gzip logs/extgap_indicator_5m.log.backup
+
+# Clean up old backups (older than 30 days)
+find data/ -name "*.csv.backup" -mtime +30 -delete
+find logs/ -name "*.log.backup" -mtime +30 -delete
+
+
+# ============================================================================
+# VIRTUAL ENVIRONMENT (if using)
+# ============================================================================
+
+# Activate virtual environment (from parent directory)
+source ../venv/bin/activate
+# or
+source ../.venv/bin/activate
+
+# Deactivate virtual environment
+deactivate
+
+# Install requirements
+pip3 install -r ../requirements.txt
+
+
+# ============================================================================
+# GIT OPERATIONS
+# ============================================================================
+
+# Check git status
+git status
+
+# View changes in this directory
+git diff paradex_extgap/
+
+# Add new files
+git add paradex_extgap/
+
+# Commit changes
+git commit -m "Update external gap indicator"
+
+# Pull latest changes
+git pull origin master
+
+
+# ============================================================================
+# PERMISSIONS (if needed)
+# ============================================================================
+
+# Make scripts executable
+chmod +x start_extgap_indicator.sh
+chmod +x stop_extgap_indicator.sh
+chmod +x status_extgap_indicator.sh
+
+# Make all .sh files executable
+chmod +x *.sh
+
+
+# ============================================================================
+# QUICK START SEQUENCE
+# ============================================================================
+
+# Complete startup sequence (copy-paste ready for WSL)
+cd /mnt/c/Users/conna/Documents/C/Mes-Projets-Crypto/paradex-screener/paradex-bot-fvgreject/paradex_extgap
+./start_extgap_indicator.sh --bg
+./status_extgap_indicator.sh
+tail -f logs/extgap_indicator_5m.log
+
+
+# ============================================================================
+# QUICK STOP SEQUENCE
+# ============================================================================
+
+# Complete shutdown sequence (copy-paste ready for WSL)
+cd /mnt/c/Users/conna/Documents/C/Mes-Projets-Crypto/paradex-screener/paradex-bot-fvgreject/paradex_extgap
+./stop_extgap_indicator.sh
+./status_extgap_indicator.sh
+
+
+# ============================================================================
+# MONITORING SEQUENCE
+# ============================================================================
+
+# Monitor all aspects (run in separate terminals)
+# Terminal 1: Live logs
+tail -f logs/extgap_indicator_5m.log
+
+# Terminal 2: Live gaps data
+watch -n 5 'tail -10 data/binance_extgap_5m_gaps.csv'
+
+# Terminal 3: Live trades data
+watch -n 5 'tail -10 data/binance_extgap_5m_trades.csv'
+
+# Terminal 4: Status check every 30 seconds
+watch -n 30 './status_extgap_indicator.sh'
+
+
+# ============================================================================
+# PERFORMANCE ANALYSIS
+# ============================================================================
+
+# Count gaps by polarity
+echo "Bullish gaps: $(grep -c 'bullish' data/binance_extgap_5m_gaps.csv)"
+echo "Bearish gaps: $(grep -c 'bearish' data/binance_extgap_5m_gaps.csv)"
+
+# Count win/loss ratio
+echo "Wins: $(grep -c 'WIN' data/binance_extgap_5m_trades.csv)"
+echo "Losses: $(grep -c 'LOSS' data/binance_extgap_5m_trades.csv)"
+
+# View cumulative P&L (last column of last trade)
+tail -1 data/binance_extgap_5m_trades.csv | awk -F',' '{print "Cumulative P&L: $" $NF}'
+
+# View average trade duration (requires more complex parsing)
+# This is just a placeholder - implement if needed
+
+
+# ============================================================================
+# END OF COMMANDS
+# ============================================================================
