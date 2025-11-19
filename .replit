@@ -22,10 +22,7 @@ PYTHONUNBUFFERED = "1"
 # Nix packages for Python environment
 [nix]
 channel = "stable-23_11"
-
-[nix.packages]
-# Python 3.11 with pip
-pkgs = ["python311", "python311Packages.pip"]
+packages = ["python311", "python311Packages.pip"]
 
 # Deployment configuration
 [deployment]
