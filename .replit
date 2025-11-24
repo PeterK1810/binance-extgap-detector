@@ -78,9 +78,9 @@ args = "Gap Detector"
 name = "Gap Detector"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python3 binance_extgap_detector_v3_replit.py"
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python3 binance_extgap_detector_v3_replit.py --timeframe 1m --stats-interval 10m"
