@@ -6,7 +6,7 @@
 
 # Main run command (executed when you click "Run" button)
 run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "BTCUSDT", "--timeframe", "2m", "--stats-interval", "1h"]
-modules = ["python-3.12", "bash", "nix"]
+modules = ["bash", "nix", "python-3.11"]
 
 # Language configuration
 [languages.python3]
@@ -58,3 +58,29 @@ ignorePorts = true
 [[ports]]
 localPort = 8080
 externalPort = 80
+
+[agent]
+expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Gap Detector"
+
+[[workflows.workflow]]
+name = "Gap Detector"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python3 binance_extgap_detector_v3_replit.py"
+
+[workflows.workflow.metadata]
+outputType = "console"

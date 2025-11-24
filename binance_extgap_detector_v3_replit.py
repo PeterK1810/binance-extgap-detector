@@ -720,7 +720,8 @@ class TelegramNotifier:
 
     async def send_message(self, text: str):
         """Send message to all configured chat IDs"""
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             for chat_id in self.chat_ids:
                 try:
                     await session.post(
@@ -1070,7 +1071,8 @@ def setup_logging(log_file: Path, level: str = "INFO"):
         handlers=[
             logging.FileHandler(log_file),
             logging.StreamHandler(sys.stdout)
-        ]
+        ],
+        force=True
     )
 
 
@@ -1112,8 +1114,17 @@ async def main():
     telegram = TelegramNotifier.from_env()
     if telegram:
         logging.info(f"✅ Telegram notifications enabled ({len(telegram.chat_ids)} chats)")
-        # Send startup notification
-        await telegram.notify_startup(config["symbol"], config["timeframe"], config["stats_interval"])
+        # Send startup notification (with timeout to prevent hanging)
+        try:
+            await asyncio.wait_for(
+                telegram.notify_startup(config["symbol"], config["timeframe"], config["stats_interval"]),
+                timeout=5.0
+            )
+            logging.info("📤 Startup notification sent to Telegram")
+        except asyncio.TimeoutError:
+            logging.warning("⚠️  Telegram startup notification timed out (will retry on first gap)")
+        except Exception as e:
+            logging.warning(f"⚠️  Failed to send Telegram startup notification: {e}")
     else:
         logging.warning("⚠️  Telegram notifications disabled (credentials not found)")
 

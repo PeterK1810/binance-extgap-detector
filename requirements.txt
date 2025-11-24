@@ -62,3 +62,7 @@ python-dotenv>=1.0.0
 # - Python 3.12 + Ubuntu 22.04 (WSL2)
 # - Python 3.11 + macOS 14 (Apple Silicon)
 # - Python 3.10 + Debian 12
+aiohttp
+python-dotenv
+telegram
+websockets
