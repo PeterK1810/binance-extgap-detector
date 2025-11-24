@@ -6,6 +6,7 @@
 
 # Main run command (executed when you click "Run" button)
 run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "BTCUSDT", "--timeframe", "2m", "--stats-interval", "1h"]
+modules = ["python-3.12", "bash", "nix"]
 
 # Language configuration
 [languages.python3]
@@ -21,13 +22,14 @@ PYTHONUNBUFFERED = "1"
 
 # Nix packages for Python environment
 [nix]
-channel = "stable-23_11"
+channel = "stable-25_05"
 packages = ["python311", "python311Packages.pip"]
 
 # Deployment configuration
 [deployment]
-run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "BTCUSDT", "--timeframe", "2m", "--stats-interval", "1h"]
-deploymentTarget = "cloudrun"
+run = ["sh", "-c", "python3 binance_extgap_detector_v3_replit.py --symbol BTCUSDT --timeframe 1m --stats-interval 1h"]
+deploymentTarget = "gce"
+ignorePorts = true
 
 # How to modify parameters:
 # =========================
