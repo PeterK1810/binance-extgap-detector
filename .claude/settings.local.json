@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(if [ -f \"./status_extgap_indicator.sh\" ])",
+      "Bash(then ./status_extgap_indicator.sh)",
+      "Bash(else echo \"Status script not found\")",
+      "Bash(fi)",
+      "Bash(bash:*)",
+      "Bash(pgrep:*)",
+      "Bash(python3:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

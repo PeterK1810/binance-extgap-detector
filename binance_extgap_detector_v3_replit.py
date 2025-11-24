@@ -706,10 +706,38 @@ class TelegramNotifier:
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
 
     @classmethod
-    def from_env(cls) -> Optional['TelegramNotifier']:
-        """Load from environment variables"""
-        bot_token = os.getenv("TELEGRAM_BOT_TOKEN_EXTGAP_DETECTOR")
-        chat_ids_str = os.getenv("TELEGRAM_CHAT_IDS_EXTGAP_DETECTOR")
+    def from_env(cls, timeframe: Optional[str] = None) -> Optional['TelegramNotifier']:
+        """Load from environment variables with timeframe-specific support
+
+        Priority order:
+        1. Timeframe-specific: TELEGRAM_BOT_TOKEN_EXTGAP_1M (if timeframe='1m')
+        2. Detector-specific: TELEGRAM_BOT_TOKEN_EXTGAP_DETECTOR
+        3. Generic fallback: TELEGRAM_BOT_TOKEN
+        """
+        bot_token = None
+        chat_ids_str = None
+
+        # Try timeframe-specific credentials first
+        if timeframe:
+            timeframe_upper = timeframe.upper()
+            bot_token = os.getenv(f"TELEGRAM_BOT_TOKEN_EXTGAP_{timeframe_upper}")
+            chat_ids_str = os.getenv(f"TELEGRAM_CHAT_IDS_EXTGAP_{timeframe_upper}")
+            if bot_token and chat_ids_str:
+                logging.info(f"Using timeframe-specific Telegram credentials: EXTGAP_{timeframe_upper}")
+
+        # Fall back to detector-specific credentials
+        if not bot_token or not chat_ids_str:
+            bot_token = os.getenv("TELEGRAM_BOT_TOKEN_EXTGAP_DETECTOR")
+            chat_ids_str = os.getenv("TELEGRAM_CHAT_IDS_EXTGAP_DETECTOR")
+            if bot_token and chat_ids_str:
+                logging.info("Using detector-specific Telegram credentials: EXTGAP_DETECTOR")
+
+        # Fall back to generic credentials
+        if not bot_token or not chat_ids_str:
+            bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+            chat_ids_str = os.getenv("TELEGRAM_CHAT_IDS")
+            if bot_token and chat_ids_str:
+                logging.info("Using generic Telegram credentials")
 
         if not bot_token or not chat_ids_str:
             logging.warning("Telegram credentials not found in environment")
@@ -1111,7 +1139,7 @@ async def main():
     logging.info("=" * 80)
 
     # Setup Telegram
-    telegram = TelegramNotifier.from_env()
+    telegram = TelegramNotifier.from_env(timeframe=timeframe)
     if telegram:
         logging.info(f"✅ Telegram notifications enabled ({len(telegram.chat_ids)} chats)")
         # Send startup notification (with timeout to prevent hanging)
