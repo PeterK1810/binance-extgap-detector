@@ -137,6 +137,98 @@ class TradeResult:
     cumulative_fees: float  # Total fees across all trades
 
 
+@dataclass
+class GapStatistics:
+    """Tracks statistics for gap detection and trading performance."""
+
+    start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    bullish_gaps: int = 0
+    bearish_gaps: int = 0
+    reversals: int = 0
+    total_trades: int = 0
+    winning_trades: int = 0
+    losing_trades: int = 0
+    cumulative_pnl: float = 0.0
+    cumulative_volume_usd: float = 0.0
+    current_trend: Optional[str] = None
+    current_sequence: int = 0
+    gap_timestamps: List[datetime] = field(default_factory=list)
+
+    @property
+    def uptime_minutes(self) -> float:
+        """Calculate uptime in minutes."""
+        return (datetime.now(timezone.utc) - self.start_time).total_seconds() / 60
+
+    @property
+    def win_rate(self) -> float:
+        """Calculate win rate percentage."""
+        if self.total_trades == 0:
+            return 0.0
+        return (self.winning_trades / self.total_trades) * 100
+
+    @property
+    def avg_frequency_min(self) -> Optional[float]:
+        """Calculate average time between gaps in minutes."""
+        if len(self.gap_timestamps) < 2:
+            return None
+        total_time = (self.gap_timestamps[-1] - self.gap_timestamps[0]).total_seconds() / 60
+        return total_time / (len(self.gap_timestamps) - 1) if len(self.gap_timestamps) > 1 else None
+
+    @property
+    def avg_winning_trade(self) -> float:
+        """Calculate average winning trade P&L (placeholder - needs trade tracking)."""
+        return 0.0  # Will be updated when trades are tracked
+
+    @property
+    def avg_losing_trade(self) -> float:
+        """Calculate average losing trade P&L (placeholder - needs trade tracking)."""
+        return 0.0  # Will be updated when trades are tracked
+
+    def record_gap(self, polarity: str, is_reversal: bool, sequence: int) -> None:
+        """Record a gap detection."""
+        if polarity == "bullish":
+            self.bullish_gaps += 1
+        else:
+            self.bearish_gaps += 1
+
+        if is_reversal:
+            self.reversals += 1
+
+        self.current_trend = polarity
+        self.current_sequence = sequence
+        self.gap_timestamps.append(datetime.now(timezone.utc))
+
+    def record_trade_close(self, result: TradeResult) -> None:
+        """Record a closed trade."""
+        self.total_trades += 1
+        if result.status == "WIN":
+            self.winning_trades += 1
+        elif result.status == "LOSS":
+            self.losing_trades += 1
+        self.cumulative_pnl = result.cumulative_pnl
+        self.cumulative_volume_usd += result.position_size_usd
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for notification."""
+        return {
+            "uptime_minutes": self.uptime_minutes,
+            "bullish_gaps": self.bullish_gaps,
+            "bearish_gaps": self.bearish_gaps,
+            "reversals": self.reversals,
+            "total_trades": self.total_trades,
+            "winning_trades": self.winning_trades,
+            "losing_trades": self.losing_trades,
+            "cumulative_pnl": self.cumulative_pnl,
+            "cumulative_volume_usd": self.cumulative_volume_usd,
+            "current_trend": self.current_trend,
+            "current_sequence": self.current_sequence,
+            "avg_frequency_min": self.avg_frequency_min,
+            "win_rate": self.win_rate,
+            "avg_winning_trade": self.avg_winning_trade,
+            "avg_losing_trade": self.avg_losing_trade,
+        }
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # EXTERNAL GAP SYMBOL STATE
 # ════════════════════════════════════════════════════════════════════════════
@@ -740,30 +832,28 @@ class TelegramExtGapNotifier:
             except TelegramError as e:
                 LOGGER.error(f"Failed to send Telegram message to {chat_id}: {e}")
 
-    async def notify_status(self, status: str, reason: str = "", symbol: str = "BTCUSDT") -> None:
+    async def notify_status(self, status: str, reason: str = "", symbol: str = "BTCUSDT", stats_interval: str = "10m") -> None:
         """Send status notification (start/stop).
 
         Args:
             status: "started" or "stopped"
             reason: Optional reason for status change
             symbol: Trading symbol
+            stats_interval: Statistics notification interval
         """
         if status == "started":
             current_time = datetime.now(timezone.utc).strftime("%H:%M:%S")
             message = (
-                f"🚀 <b>BOT INDICATOR {self.timeframe.upper()} DÉMARRÉ - {symbol}</b>\n"
+                f"🚀 <b>BOT V3 REPLIT DÉMARRÉ - {symbol}</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"⏰ {current_time} UTC\n"
-                f"📊 Version: <b>External Gap Indicator</b>\n"
+                f"📊 Version: <b>V3 Replit (PineScript Algorithm)</b>\n"
                 f"🖥️ Instance: <b>{self.instance_id}</b>\n"
                 f"⏱️ Timeframe: <b>{self.timeframe}</b>\n"
-                f"💰 Notional: <b>$1000</b>\n"
+                f"📈 Stats interval: <b>{stats_interval}</b>\n"
                 f"🔍 Statut: <b>Surveillance active</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"✅ Détection des gaps externes et trading en cours...\n"
-                f"📈 Stratégie: Trend-following avec position reversal\n"
-                f"🎯 Entry: Open du candle suivant détection\n"
-                f"⏳ Exit: Gap opposé ou auto-close 24h"
+                f"✅ Détection des gaps externes en cours..."
             )
         else:
             current_time = datetime.now(timezone.utc).strftime("%H:%M:%S")
@@ -800,14 +890,14 @@ class TelegramExtGapNotifier:
                 f"⚠️ Pas de trade - attente inversion"
             )
         else:
+            # Continuation gap - simpler format matching user's example
             message = (
                 f"📊 <b>GAP {gap.polarity.upper()} #{sequence_number} DÉTECTÉ - {gap.symbol}</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"⏰ {gap.detection_bar_time.strftime('%H:%M:%S')} UTC\n"
                 f"💰 Niveau: <b>{gap.gap_level:,.2f} USDT</b>\n"
                 f"📈 Séquence: <b>{gap.polarity.upper()} #{sequence_number}</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"⏳ Entrée pending sur prochain candle open"
+                f"━━━━━━━━━━━━━━━━━━━━"
             )
         await self._send_message(message)
 
@@ -837,7 +927,16 @@ class TelegramExtGapNotifier:
         )
         await self._send_message(message)
 
-    async def notify_trade_close(self, result: TradeResult, prev_sequence: int = 0, new_sequence: int = 1, new_polarity: str = "unknown") -> None:
+    async def notify_trade_close(
+        self,
+        result: TradeResult,
+        prev_sequence: int = 0,
+        new_sequence: int = 1,
+        new_polarity: str = "unknown",
+        new_gap_level: float = 0.0,
+        prev_gap_level: float = 0.0,
+        new_entry_price: float = 0.0,
+    ) -> None:
         """Send trade close notification.
 
         Args:
@@ -845,6 +944,9 @@ class TelegramExtGapNotifier:
             prev_sequence: Previous sequence number
             new_sequence: New sequence number after reversal
             new_polarity: New polarity after reversal
+            new_gap_level: New gap level after reversal
+            prev_gap_level: Previous gap level
+            new_entry_price: Entry price of new position
         """
         status_emoji = "✅" if result.status == "WIN" else "❌"
         pnl_sign = "+" if result.realized_pnl >= 0 else ""
@@ -863,17 +965,81 @@ class TelegramExtGapNotifier:
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"⏰ {result.close_time.strftime('%H:%M:%S')} UTC\n"
             f"{old_emoji} <b>{old_polarity} #{prev_sequence}</b> → {new_emoji} <b>{new_polarity.upper()} #{new_sequence}</b>\n"
+            f"💰 Nouveau niveau: <b>{new_gap_level:,.2f} USDT</b>\n"
+            f"📊 Gap précédent: {prev_gap_level:,.2f} ({old_polarity.lower()} #{prev_sequence})\n"
             f"\n"
             f"💰 <b>P&L Position Fermée:</b>\n"
             f"  {status_emoji} {result.side}: <b>{pnl_sign}{result.realized_pnl:.2f} USD ({pnl_sign}{pnl_pct:.2f}%)</b>\n"
             f"  📊 Entrée: {result.entry_price:,.2f} → Sortie: {result.exit_price:,.2f}\n"
             f"  🔢 Quantité: {qty_btc:.6f} BTC\n"
-            f"  💸 Frais totaux: ${result.total_fees:.2f}\n"
             f"\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"💵 P&L cumulé: <b>{'+' if result.cumulative_pnl >= 0 else ''}{result.cumulative_pnl:.2f} USD</b>\n"
-            f"📊 W/L: {result.cumulative_wins}/{result.cumulative_losses}\n"
-            f"💸 Frais cumulés: ${result.cumulative_fees:.2f}"
+            f"💵 Prix d'entrée nouvelle position: <b>{new_entry_price:,.2f} USDT</b>"
+        )
+        await self._send_message(message)
+
+    async def notify_stats(self, symbol: str, stats_interval: str, stats: dict) -> None:
+        """Send periodic statistics notification.
+
+        Args:
+            symbol: Trading symbol
+            stats_interval: Stats interval string (e.g., "10m", "30m")
+            stats: Statistics dictionary from GapStatistics.to_dict()
+        """
+        # Format uptime
+        uptime_min = stats['uptime_minutes']
+        if uptime_min < 60:
+            uptime_text = f"{uptime_min:.0f}m"
+        elif uptime_min < 1440:
+            uptime_text = f"{uptime_min/60:.1f}h"
+        else:
+            uptime_text = f"{uptime_min/1440:.1f}d"
+
+        # P&L emoji
+        pnl = stats['cumulative_pnl']
+        pnl_emoji = "✅" if pnl > 0 else ("❌" if pnl < 0 else "➖")
+
+        # Trend display
+        current_trend = stats['current_trend']
+        current_seq = stats['current_sequence']
+
+        if current_trend == "bullish":
+            trend_text = f"🟢 <b>BULLISH #{current_seq}</b>"
+        elif current_trend == "bearish":
+            trend_text = f"🔴 <b>BEARISH #{current_seq}</b>"
+        else:
+            trend_text = "⚪ <b>N/A</b>"
+
+        # Frequency text
+        freq = stats['avg_frequency_min']
+        freq_text = f"{freq:.1f} min" if freq else "N/A"
+
+        message = (
+            f"📊 <b>STATISTIQUES ({stats_interval}) - {symbol}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🕐 {datetime.now(timezone.utc).strftime('%H:%M')} UTC\n"
+            f"⏱️ Timeframe: <b>{self.timeframe}</b>\n"
+            f"⏳ Uptime: <b>{uptime_text}</b>\n"
+            f"\n"
+            f"<b>📈 GAP STATISTICS:</b>\n"
+            f"⬆️ Gaps bullish: <b>{stats['bullish_gaps']}</b>\n"
+            f"⬇️ Gaps bearish: <b>{stats['bearish_gaps']}</b>\n"
+            f"🔄 Inversions: <b>{stats['reversals']}</b>\n"
+            f"⏱️ Fréquence moyenne: {freq_text}\n"
+            f"💡 Tendance actuelle: {trend_text}\n"
+            f"\n"
+            f"<b>💰 TRADING PERFORMANCE:</b>\n"
+            f"{pnl_emoji} P&L cumulé: <b>{pnl:+.2f} USD</b>\n"
+            f"📊 Nombre de trades: <b>{stats['total_trades']}</b>\n"
+            f"✅ Trades gagnants: <b>{stats['winning_trades']}</b>\n"
+            f"❌ Trades perdants: <b>{stats['losing_trades']}</b>\n"
+            f"🎯 Win rate: <b>{stats['win_rate']:.1f}%</b>\n"
+            f"💵 Volume cumulé: <b>${stats['cumulative_volume_usd']:,.0f}</b>\n"
+            f"\n"
+            f"<b>📉 AVERAGES:</b>\n"
+            f"✅ Trade moyen gagnant: <b>+{stats['avg_winning_trade']:.2f} USD</b>\n"
+            f"❌ Trade moyen perdant: <b>{stats['avg_losing_trade']:.2f} USD</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━"
         )
         await self._send_message(message)
 
@@ -930,6 +1096,27 @@ async def fetch_historical_klines(
 # ════════════════════════════════════════════════════════════════════════════
 
 
+def parse_stats_interval(interval_str: str) -> int:
+    """Parse stats interval string to minutes.
+
+    Args:
+        interval_str: Interval string (e.g., "10m", "30m", "1h", "2h")
+
+    Returns:
+        Interval in minutes
+    """
+    interval_str = interval_str.strip().lower()
+    if interval_str.endswith("m"):
+        return int(interval_str[:-1])
+    elif interval_str.endswith("h"):
+        return int(interval_str[:-1]) * 60
+    elif interval_str.endswith("d"):
+        return int(interval_str[:-1]) * 1440
+    else:
+        # Default to minutes if no suffix
+        return int(interval_str)
+
+
 async def listen_for_gaps(
     symbol: str,
     timeframe: str,
@@ -937,6 +1124,7 @@ async def listen_for_gaps(
     trade_recorder: TradeRecorder,
     trade_manager: ExtGapTradeManager,
     notifier: Optional[TelegramExtGapNotifier],
+    stats_interval: str = "10m",
 ) -> None:
     """Main loop: connect to WebSocket, detect gaps and trade (no historical data).
 
@@ -947,13 +1135,22 @@ async def listen_for_gaps(
         trade_recorder: Trade CSV recorder
         trade_manager: Trade manager
         notifier: Telegram notifier (optional)
+        stats_interval: Statistics notification interval (e.g., "10m", "30m", "1h")
     """
     # Initialize symbol state (no historical data - only detect new gaps going forward)
     symbol_state = ExternalGapSymbolState(symbol)
 
+    # Initialize statistics tracking
+    gap_stats = GapStatistics()
+
+    # Parse stats interval
+    stats_interval_minutes = parse_stats_interval(stats_interval)
+    last_stats_time = datetime.now(timezone.utc)
+
     LOGGER.info(
         f"Starting external gap detection for {symbol} (no historical data - detecting new gaps only)"
     )
+    LOGGER.info(f"Statistics interval: {stats_interval} ({stats_interval_minutes} minutes)")
 
     # Track current price for potential exit on shutdown
     current_prices: Dict[str, float] = {}
@@ -984,7 +1181,17 @@ async def listen_for_gaps(
                             trade_manager,
                             notifier,
                             current_prices,
+                            gap_stats,
                         )
+
+                        # Check if stats should be sent
+                        now = datetime.now(timezone.utc)
+                        if (now - last_stats_time).total_seconds() >= stats_interval_minutes * 60:
+                            if notifier:
+                                await notifier.notify_stats(symbol, stats_interval, gap_stats.to_dict())
+                            last_stats_time = now
+                            LOGGER.info(f"Sent periodic statistics ({stats_interval})")
+
                     except Exception as e:
                         LOGGER.error(f"Error processing message: {e}", exc_info=True)
 
@@ -1007,6 +1214,7 @@ async def _handle_stream_message(
     trade_manager: ExtGapTradeManager,
     notifier: Optional[TelegramExtGapNotifier],
     current_prices: Dict[str, float],
+    gap_stats: GapStatistics,
 ) -> None:
     """Handle incoming WebSocket message.
 
@@ -1018,6 +1226,7 @@ async def _handle_stream_message(
         trade_manager: Trade manager
         notifier: Telegram notifier (optional)
         current_prices: Map of symbol -> current price
+        gap_stats: Statistics tracker
     """
     # Extract kline data
     if "data" not in data:
@@ -1054,10 +1263,19 @@ async def _handle_stream_message(
     expiry_trade = trade_manager.check_24h_expiry(symbol, candle.close_time, candle.close)
     if expiry_trade is not None:
         trade_recorder.record(expiry_trade)
+        gap_stats.record_trade_close(expiry_trade)
         if notifier:
             # For 24h expiry, there's no reversal - pass current polarity
             current_polarity = "bullish" if symbol_state.last_gap_polarity == "bullish" else "bearish"
-            await notifier.notify_trade_close(expiry_trade, symbol_state.current_sequence_number, 0, current_polarity)
+            await notifier.notify_trade_close(
+                expiry_trade,
+                symbol_state.current_sequence_number,
+                0,
+                current_polarity,
+                0.0,  # No new gap level for expiry
+                symbol_state.last_gap_level or 0.0,
+                0.0,  # No new entry price for expiry
+            )
 
     # Check for pending entry from previous candle
     pending_entry = symbol_state.get_pending_entry(candle.open)
@@ -1067,6 +1285,9 @@ async def _handle_stream_message(
             f"{symbol}: Executing pending {side.upper()} entry at {entry_price:.2f}"
         )
 
+        # Store previous gap level before reversal
+        prev_gap_level = symbol_state.last_gap_level or 0.0
+
         # Open or reverse position
         closed_trade, new_trade = trade_manager.open_or_reverse(
             symbol, side, entry_price, candle.open_time
@@ -1075,10 +1296,19 @@ async def _handle_stream_message(
         # Record and notify closed trade (reversal case - get gap polarity from new trade side)
         if closed_trade is not None:
             trade_recorder.record(closed_trade)
+            gap_stats.record_trade_close(closed_trade)
             if notifier:
                 # New polarity is opposite of closed trade: if closed SHORT, new is bullish (LONG)
                 new_polarity = "bullish" if new_trade.side == "long" else "bearish"
-                await notifier.notify_trade_close(closed_trade, symbol_state.last_sequence_number, symbol_state.current_sequence_number, new_polarity)
+                await notifier.notify_trade_close(
+                    closed_trade,
+                    symbol_state.last_sequence_number,
+                    symbol_state.current_sequence_number,
+                    new_polarity,
+                    gap_level or 0.0,  # New gap level
+                    prev_gap_level,  # Previous gap level
+                    entry_price,  # New entry price
+                )
 
         # Notify new trade (use gap_level from pending entry and current sequence number)
         if notifier and gap_level is not None:
@@ -1090,6 +1320,10 @@ async def _handle_stream_message(
     if gap:
         # Record gap
         gap_recorder.record(gap)
+
+        # Update statistics
+        is_reversal = not gap.is_first_gap and symbol_state.last_sequence_number > 0
+        gap_stats.record_gap(gap.polarity, is_reversal, gap.sequence_number)
 
         # Notify gap detection (pass is_first_gap flag and sequence number)
         if notifier:
@@ -1202,7 +1436,7 @@ def parse_args() -> argparse.Namespace:
         "--timeframe",
         type=str,
         default="15m",
-        help="Kline interval (default: 15m)",
+        help="Kline interval (default: 3m)",
     )
 
     parser.add_argument(
@@ -1248,6 +1482,13 @@ def parse_args() -> argparse.Namespace:
         help="Logging level (default: INFO)",
     )
 
+    parser.add_argument(
+        "--stats-interval",
+        type=str,
+        default=None,
+        help="Statistics notification interval (e.g., 10m, 30m, 1h). Defaults to STATS_INTERVAL_EXTGAP_15M env var or 10m",
+    )
+
     return parser.parse_args()
 
 
@@ -1287,11 +1528,19 @@ async def main() -> None:
     args = parse_args()
     setup_logging(args.log_level, args.timeframe)
 
+    # Determine stats interval: CLI arg > env var > default
+    stats_interval = args.stats_interval
+    if stats_interval is None:
+        # Check for timeframe-specific environment variable
+        tf_upper = args.timeframe.upper()
+        stats_interval = os.getenv(f"STATS_INTERVAL_EXTGAP_{tf_upper}", "10m")
+
     LOGGER.info("=" * 80)
     LOGGER.info("Binance Futures External Gap Indicator")
     LOGGER.info("=" * 80)
     LOGGER.info(f"Symbol: {args.symbol}")
     LOGGER.info(f"Timeframe: {args.timeframe}")
+    LOGGER.info(f"Stats interval: {stats_interval}")
     LOGGER.info(f"Notional: ${args.notional}")
     LOGGER.info(f"Entry fee rate: {args.entry_fee_rate * 100:.3f}%")
     LOGGER.info(f"Exit fee rate: {args.exit_fee_rate * 100:.3f}%")
@@ -1311,7 +1560,7 @@ async def main() -> None:
 
     # Send start notification
     if notifier:
-        await notifier.notify_status("started")
+        await notifier.notify_status("started", symbol=args.symbol, stats_interval=stats_interval)
 
     try:
         # Run main loop
@@ -1322,6 +1571,7 @@ async def main() -> None:
             trade_recorder,
             trade_manager,
             notifier,
+            stats_interval,
         )
 
     except KeyboardInterrupt:
