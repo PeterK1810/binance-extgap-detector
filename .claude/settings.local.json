@@ -7,7 +7,14 @@
       "Bash(fi)",
       "Bash(bash:*)",
       "Bash(pgrep:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(pkill:*)",
+      "Bash(env)",
+      "Bash(cat:*)",
+      "Bash(git check-ignore:*)",
+      "WebSearch",
+      "WebFetch(domain:developers.binance.com)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []
