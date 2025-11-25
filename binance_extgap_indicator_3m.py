@@ -682,13 +682,13 @@ class TelegramExtGapNotifier:
         Returns:
             TelegramExtGapNotifier instance or None if credentials missing
         """
-        # Use 5M credentials for 3M timeframe
+        # Use 3M credentials for 3M timeframe
         bot_token = (
-            os.getenv("TELEGRAM_BOT_TOKEN_EXTGAP_5M")
+            os.getenv("TELEGRAM_BOT_TOKEN_EXTGAP_3M")
             or os.getenv("TELEGRAM_BOT_TOKEN")
         )
         chat_ids_str = (
-            os.getenv("TELEGRAM_CHAT_IDS_EXTGAP_5M")
+            os.getenv("TELEGRAM_CHAT_IDS_EXTGAP_3M")
             or os.getenv("TELEGRAM_CHAT_IDS")
         )
         instance_id = os.getenv("INSTANCE_ID", "LOCAL")

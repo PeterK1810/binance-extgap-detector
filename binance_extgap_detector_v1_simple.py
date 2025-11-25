@@ -90,6 +90,7 @@ class ExternalGap:
     detection_bar_time: datetime
     is_first_gap: bool
     is_reversal: bool  # True if polarity changed from previous gap
+    sequence_number: int  # Sequence number within current trend
     detection_candle_close: float  # Close price of candle that triggered detection
 
 
@@ -122,6 +123,10 @@ class GapDetectorState:
 
         # First-gap logic
         self.first_gap_detected: bool = False
+
+        # Sequence tracking
+        self.current_sequence_number: int = 0
+        self.last_sequence_number: int = 0  # Previous sequence before reversal
 
         # Statistics
         self.total_gaps: int = 0
@@ -175,9 +180,15 @@ class GapDetectorState:
 
         if is_first:
             self.first_gap_detected = True
+            self.current_sequence_number = 1  # Initialize sequence
         elif self.last_gap_polarity is not None and self.last_gap_polarity != polarity:
             is_reversal = True
             self.reversals += 1
+            self.last_sequence_number = self.current_sequence_number  # Save previous sequence
+            self.current_sequence_number = 1  # Reset sequence on reversal
+        else:
+            # Same polarity - increment sequence
+            self.current_sequence_number += 1
 
         # Update gap tracking
         self.last_gap_time = candle.close_time
@@ -206,6 +217,7 @@ class GapDetectorState:
             detection_bar_time=candle.close_time,
             is_first_gap=is_first,
             is_reversal=is_reversal,
+            sequence_number=self.current_sequence_number,
             detection_candle_close=candle.close
         )
 
@@ -222,6 +234,7 @@ class GapDetectorState:
             "bearish_gaps": self.bearish_gaps,
             "reversals": self.reversals,
             "current_trend": self.last_gap_polarity or "N/A",
+            "current_sequence": self.current_sequence_number,
             "avg_frequency_min": avg_frequency_min
         }
 
@@ -240,7 +253,7 @@ class GapCSVRecorder:
         # Create file with headers if doesn't exist
         if not self.output_path.exists():
             with open(self.output_path, 'w') as f:
-                f.write("detected_at_utc,symbol,polarity,gap_level,gap_opening_bar_time,detection_bar_time,is_first_gap,is_reversal\n")
+                f.write("detected_at_utc,symbol,polarity,sequence_number,gap_level,gap_opening_bar_time,detection_bar_time,is_first_gap,is_reversal\n")
 
     def record_gap(self, gap: ExternalGap):
         """Append gap detection to CSV"""
@@ -248,6 +261,7 @@ class GapCSVRecorder:
             f.write(f"{gap.detected_at.isoformat()},"
                    f"{gap.symbol},"
                    f"{gap.polarity},"
+                   f"{gap.sequence_number},"
                    f"{gap.gap_level:.2f},"
                    f"{gap.gap_opening_bar_time.isoformat()},"
                    f"{gap.detection_bar_time.isoformat()},"
@@ -299,7 +313,7 @@ class TelegramNotifier:
             f"🚀 <b>PREMIER GAP DÉTECTÉ - {gap.symbol}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"⏰ {gap.detection_bar_time.strftime('%H:%M:%S')} UTC\n"
-            f"📊 Polarité: <b>{gap.polarity.upper()}</b> {emoji}\n"
+            f"📊 Polarité: <b>{gap.polarity.upper()} #{gap.sequence_number}</b> {emoji}\n"
             f"💰 Niveau: <b>{gap.gap_level:,.2f} USDT</b>\n"
             f"🕒 Barre ouverture: {gap.gap_opening_bar_time.strftime('%H:%M:%S')}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -327,16 +341,16 @@ class TelegramNotifier:
         """Notification for normal gap (same polarity)"""
         emoji = "⬆️" if gap.polarity == "bullish" else "⬇️"
         text = (
-            f"📊 <b>GAP {gap.polarity.upper()} DÉTECTÉ - {gap.symbol}</b>\n"
+            f"📊 <b>GAP {gap.polarity.upper()} #{gap.sequence_number} DÉTECTÉ - {gap.symbol}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"⏰ {gap.detection_bar_time.strftime('%H:%M:%S')} UTC\n"
             f"💰 Niveau: <b>{gap.gap_level:,.2f} USDT</b>\n"
-            f"📈 Tendance: {gap.polarity.upper()} ({gap_count}e gap)\n"
+            f"📈 Séquence: <b>{gap.polarity.upper()} #{gap.sequence_number}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━"
         )
         await self.send_message(text)
 
-    async def notify_reversal(self, gap: ExternalGap, prev_polarity: str, prev_level: float):
+    async def notify_reversal(self, gap: ExternalGap, prev_polarity: str, prev_sequence: int, prev_level: float):
         """Notification for trend reversal"""
         old_emoji = "🔴" if prev_polarity == "bearish" else "🟢"
         new_emoji = "🟢" if gap.polarity == "bullish" else "🔴"
@@ -344,18 +358,30 @@ class TelegramNotifier:
             f"🔄 <b>INVERSION DE TENDANCE - {gap.symbol}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"⏰ {gap.detection_bar_time.strftime('%H:%M:%S')} UTC\n"
-            f"{old_emoji} <b>{prev_polarity.upper()}</b> → {new_emoji} <b>{gap.polarity.upper()}</b>\n"
+            f"{old_emoji} <b>{prev_polarity.upper()} #{prev_sequence}</b> → {new_emoji} <b>{gap.polarity.upper()} #{gap.sequence_number}</b>\n"
             f"💰 Nouveau niveau: <b>{gap.gap_level:,.2f} USDT</b>\n"
-            f"📊 Gap précédent: {prev_level:,.2f} ({prev_polarity})\n"
+            f"📊 Gap précédent: {prev_level:,.2f} ({prev_polarity} #{prev_sequence})\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"💵 Prix d'entrée: <b>{gap.detection_candle_close:,.2f} USDT</b>"
+            f"💵 Prix d'entrée nouvelle position: <b>{gap.detection_candle_close:,.2f} USDT</b>"
         )
         await self.send_message(text)
 
     async def notify_hourly_stats(self, symbol: str, stats: dict):
         """Notification for hourly statistics"""
         freq_text = f"{stats['avg_frequency_min']:.1f} min" if stats['avg_frequency_min'] else "N/A"
-        trend_emoji = "🟢" if stats['current_trend'] == "bullish" else "🔴" if stats['current_trend'] == "bearish" else "⚪"
+
+        current_trend = stats['current_trend']
+        current_seq = stats['current_sequence']
+
+        if current_trend == "bullish":
+            trend_emoji = "🟢"
+            trend_text = f"{trend_emoji} <b>BULLISH #{current_seq}</b>"
+        elif current_trend == "bearish":
+            trend_emoji = "🔴"
+            trend_text = f"{trend_emoji} <b>BEARISH #{current_seq}</b>"
+        else:
+            trend_emoji = "⚪"
+            trend_text = f"{trend_emoji} <b>N/A</b>"
 
         text = (
             f"📊 <b>STATISTIQUES HORAIRES - {symbol}</b>\n"
@@ -365,19 +391,22 @@ class TelegramNotifier:
             f"⬇️ Gaps bearish: <b>{stats['bearish_gaps']}</b>\n"
             f"🔄 Inversions: <b>{stats['reversals']}</b>\n"
             f"⏱️ Fréquence moyenne: {freq_text}\n"
-            f"💡 Tendance actuelle: {trend_emoji} <b>{stats['current_trend'].upper()}</b>\n"
+            f"💡 Tendance actuelle: {trend_text}\n"
             f"━━━━━━━━━━━━━━━━━━━━"
         )
         await self.send_message(text)
 
     async def notify_startup(self, symbol: str, timeframe: str, version: str = "v1"):
         """Notification for bot startup"""
+        import os
+        instance_id = os.getenv("INSTANCE_ID", "UNKNOWN")
         version_name = "Simple Reset Logic" if version == "v1" else "Corrected Reset Logic"
         text = (
-            f"🚀 <b>BOT DÉMARRÉ - {symbol}</b>\n"
+            f"🚀 <b>BOT DETECTOR {version.upper()} DÉMARRÉ - {symbol}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"⏰ {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC\n"
             f"📊 Version: <b>{version.upper()}</b> ({version_name})\n"
+            f"🖥️ Instance: <b>{instance_id}</b>\n"
             f"⏱️ Timeframe: <b>{timeframe}</b>\n"
             f"🔍 Statut: <b>Surveillance active</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -432,7 +461,7 @@ class BinanceExtGapDetector:
                     await self.telegram.notify_initial_trend(gap)
                 elif gap.is_reversal:
                     prev_polarity = "bearish" if gap.polarity == "bullish" else "bullish"
-                    await self.telegram.notify_reversal(gap, prev_polarity, self.state.last_gap_level or 0)
+                    await self.telegram.notify_reversal(gap, prev_polarity, self.state.last_sequence_number, self.state.last_gap_level or 0)
                 else:
                     gap_count = self.state.bullish_gaps if gap.polarity == "bullish" else self.state.bearish_gaps
                     await self.telegram.notify_gap(gap, gap_count)

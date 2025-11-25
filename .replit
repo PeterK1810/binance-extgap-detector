@@ -1,34 +1,27 @@
-# Replit Configuration for Binance External Gap Detector V3
-# ==========================================================
-#
-# This file tells Replit how to run the gap detector bot.
-# Edit the 'run' command below to change parameters.
+# External Gap Indicator - Production Multi-Bot Configuration
+# =============================================================
+# This file tells Replit to launch all 3 bots via supervisord
 
-# Main run command (executed when you click "Run" button)
-run = ["python3", "binance_extgap_detector_v3_replit.py", "--symbol", "BTCUSDT", "--timeframe", "2m", "--stats-interval", "1h"]
+run = ["bash", "start_all_bots.sh"]
+
 modules = ["bash", "nix", "python-3.11"]
 
-# Language configuration
 [languages.python3]
 pattern = "**/*.py"
 
 [languages.python3.languageServer]
 start = "pylsp"
 
-# Environment variables (use Replit Secrets for sensitive data)
 [env]
 PYTHONPATH = "${PYTHONPATH}:${REPL_HOME}"
 PYTHONUNBUFFERED = "1"
 
-# Nix packages for Python environment
 [nix]
 channel = "stable-25_05"
-packages = ["python311", "python311Packages.pip"]
 
-# Deployment configuration
 [deployment]
-run = ["sh", "-c", "python3 binance_extgap_detector_v3_replit.py --symbol BTCUSDT --timeframe 1m --stats-interval 1h"]
-deploymentTarget = "gce"
+run = ["bash", "-c", "./start_3_timeframes.sh"]
+deploymentTarget = "vm"
 ignorePorts = true
 
 [[ports]]
@@ -54,9 +47,9 @@ args = "Gap Detector"
 name = "Gap Detector"
 author = "agent"
 
-[workflows.workflow.metadata]
-outputType = "console"
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python3 binance_extgap_detector_v3_replit.py --timeframe 1m --stats-interval 10m"
+
+[workflows.workflow.metadata]
+outputType = "console"

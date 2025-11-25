@@ -68,11 +68,18 @@ diff data/extgap_detector_v1_gaps.csv data/extgap_detector_v2_gaps.csv
 - CSV: `data/extgap_detector_v1_gaps.csv` and `data/extgap_detector_v2_gaps.csv`
 - Logs: `logs/extgap_detector_v1.log` and `logs/extgap_detector_v2.log`
 
-**Telegram Notifications:**
-1. **First gap:** Initial gap detected at startup (no trade recommendation)
-2. **Normal gap:** Same polarity as previous gap
-3. **Reversal:** Polarity changed (bullish→bearish or bearish→bullish) - potential entry signal
-4. **Hourly stats:** Automatic summary every hour with gap counts and frequency
+**Telegram Notifications (French Format):**
+All Telegram messages use French language with sequence tracking:
+1. **First gap:** "🚀 PREMIER GAP DÉTECTÉ - BTCUSDT" - Shows sequence #1
+2. **Normal gap:** "📊 GAP BULLISH #2 DÉTECTÉ" - Increments sequence counter
+3. **Reversal:** "🔄 INVERSION DE TENDANCE" - Shows transition (e.g., "BEARISH #2 → BULLISH #1")
+4. **Hourly stats:** Shows current sequence in trend display (e.g., "BULLISH #3")
+
+**Sequence Tracking:**
+- Each gap within same polarity increments the sequence (#1, #2, #3, etc.)
+- Reversal resets sequence to #1 for the new polarity
+- Provides visual trend strength indicator
+- CSV files include `sequence_number` column
 
 ### 2. Full Trading Bots (PRODUCTION)
 
@@ -153,8 +160,15 @@ Both `binance_extgap_indicator_2m.py` and `binance_extgap_indicator_5m.py` conta
 - `from_env()`: Loads credentials with timeframe fallback
   - Tries `TELEGRAM_BOT_TOKEN_EXTGAP_2M` first
   - Falls back to `TELEGRAM_BOT_TOKEN`
-- Different notification messages for first gap vs reversal
-- Shows P&L, cumulative P&L, win/loss ratio
+- **French-language notifications** with sequence tracking
+- **Startup message**: "🚀 BOT INDICATOR 2M DÉMARRÉ" with instance details
+- **Gap detection**: Shows sequence numbers (#1, #2, #3, etc.)
+- **Trade entry**: "📈 ENTRÉE LONG #1" with full position details
+- **Trade close/reversal**: "🔄 INVERSION DE TENDANCE" showing:
+  - Polarity transition with sequences (e.g., "🔴 BEARISH #2 → 🟢 BULLISH #1")
+  - P&L from closed position (entry/exit prices, quantity in BTC)
+  - Cumulative P&L and W/L ratio
+  - Total fees paid
 
 **WebSocket Loop** (lines 882-1056):
 - `listen_for_gaps()`: Main async loop
@@ -455,11 +469,14 @@ Manually close if needed (modify script to add manual close command).
 
 ### CSV File Formats
 
-**Gap Detections CSV:**
+**Gap Detections CSV (UPDATED with sequence_number):**
 ```csv
-detected_at_utc,symbol,polarity,gap_level,gap_opening_bar_time,detection_bar_time
-2025-11-11T18:52:00+00:00,BTCUSDT,bullish,103459.50,2025-11-11T17:35:00+00:00,2025-11-11T18:52:00+00:00
+detected_at_utc,symbol,polarity,sequence_number,gap_level,gap_opening_bar_time,detection_bar_time
+2025-11-11T18:52:00+00:00,BTCUSDT,bullish,1,103459.50,2025-11-11T17:35:00+00:00,2025-11-11T18:52:00+00:00
+2025-11-11T19:05:00+00:00,BTCUSDT,bullish,2,103523.80,2025-11-11T18:52:00+00:00,2025-11-11T19:05:00+00:00
+2025-11-11T19:20:00+00:00,BTCUSDT,bearish,1,103401.20,2025-11-11T19:05:00+00:00,2025-11-11T19:20:00+00:00
 ```
+**Note:** Sequence resets to 1 on polarity reversal
 
 **Trade Results CSV:**
 ```csv
@@ -519,10 +536,106 @@ echo "Bearish: $(grep -c "bearish" data/binance_extgap_2m_gaps.csv)"
 - **CSV Writes**: Append-only, negligible impact
 - **Telegram API**: Async, non-blocking
 
+## Telegram Message Format Reference
+
+All bots now use **French-language notifications** with consistent formatting:
+
+### Message Types
+
+**1. Startup Notification:**
+```
+🚀 BOT DETECTOR V1 DÉMARRÉ - BTCUSDT
+━━━━━━━━━━━━━━━━━━━━
+⏰ 10:56:42 UTC
+📊 Version: V1 (Simple Reset Logic)
+🖥️ Instance: LOCAL
+⏱️ Timeframe: 2m
+🔍 Statut: Surveillance active
+━━━━━━━━━━━━━━━━━━━━
+✅ Détection des gaps externes en cours...
+```
+
+**2. First Gap:**
+```
+🚀 PREMIER GAP DÉTECTÉ - BTCUSDT
+━━━━━━━━━━━━━━━━━━━━
+⏰ 09:58:59 UTC
+📊 Polarité: BEARISH #1 ⬇️
+💰 Niveau: 86,011.00 USDT
+🕒 Barre ouverture: 09:56:00
+━━━━━━━━━━━━━━━━━━━━
+⚠️ Pas de trade - attente inversion
+```
+
+**3. Normal Gap (Same Polarity):**
+```
+📊 GAP BEARISH #2 DÉTECTÉ - BTCUSDT
+━━━━━━━━━━━━━━━━━━━━
+⏰ 09:59:59 UTC
+💰 Niveau: 85,961.00 USDT
+📈 Séquence: BEARISH #2
+━━━━━━━━━━━━━━━━━━━━
+```
+
+**4. Reversal (Trading Bots):**
+```
+🔄 INVERSION DE TENDANCE - BTCUSDT
+━━━━━━━━━━━━━━━━━━━━
+⏰ 10:03:59 UTC
+🔴 BEARISH #2 → 🟢 BULLISH #1
+💰 Nouveau niveau: 85,927.60 USDT
+📊 Gap précédent: 85,927.60 (bearish #2)
+
+💰 P&L Position Fermée:
+  ❌ SHORT: -2.03 USD (-0.20%)
+  📊 Entrée: 85,924.30 → Sortie: 86,099.10
+  🔢 Quantité: 0.011638 BTC
+
+━━━━━━━━━━━━━━━━━━━━
+💵 Prix d'entrée nouvelle position: 86,099.10 USDT
+```
+
+**5. Hourly/Interval Statistics:**
+```
+📊 STATISTIQUES (10m) - BTCUSDT
+━━━━━━━━━━━━━━━━━━━━
+🕐 10:07 UTC
+⏱️ Timeframe: 1m
+⏳ Uptime: 10m
+
+📈 GAP STATISTICS:
+⬆️ Gaps bullish: 2
+⬇️ Gaps bearish: 2
+🔄 Inversions: 1
+⏱️ Fréquence moyenne: 0.8 min
+💡 Tendance actuelle: 🟢 BULLISH #2
+
+💰 TRADING PERFORMANCE:
+❌ P&L cumulé: -2.03 USD
+📊 Nombre de trades: 1
+✅ Trades gagnants: 0
+❌ Trades perdants: 1
+🎯 Win rate: 0.0%
+💵 Volume cumulé: $1,000
+
+📉 AVERAGES:
+✅ Trade moyen gagnant: +0.00 USD
+❌ Trade moyen perdant: -2.03 USD
+━━━━━━━━━━━━━━━━━━━━
+```
+
+### Key Formatting Elements
+- **Box drawing**: `━━━━━━━━━━━━━━━━━━━━` for visual separation
+- **Emojis**: 🟢 (bullish/green), 🔴 (bearish/red), ⬆️/⬇️ (direction)
+- **Sequence numbers**: Always show `#1`, `#2`, `#3` after polarity
+- **French labels**: All text in French (e.g., "Entrée", "Sortie", "P&L cumulé")
+- **Number formatting**: Thousands separator with comma (e.g., `86,099.10`)
+
 ## Related Documentation
 
 - `README.md` - Comprehensive strategy explanation
 - `QUICKSTART.md` - Step-by-step startup guide
 - `COMMANDS.txt` - Complete command reference for WSL
-- Parent `CLAUDE.md` - Main project architecture (Paradex trading system)
-- `../scripts/CLAUDE.md` - 3-candle FVG gap indicators (different strategy)
+- `TESTING_V3.md` - V3 PineScript algorithm testing guide
+- `TROUBLESHOOTING_NO_GAPS.md` - Debugging gap detection issues
+- `.env.example` - Environment variable configuration template

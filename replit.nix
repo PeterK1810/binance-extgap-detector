@@ -6,6 +6,9 @@
 
     # Optional: Development tools
     pkgs.python311Packages.virtualenv
+
+    # Process manager for production deployment
+    pkgs.python311Packages.supervisor
   ];
 
   # Environment setup
