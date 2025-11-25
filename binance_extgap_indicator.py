@@ -682,16 +682,13 @@ class TelegramExtGapNotifier:
         Returns:
             TelegramExtGapNotifier instance or None if credentials missing
         """
-        # Try timeframe-specific tokens first, then DETECTOR, then generic
-        timeframe_upper = timeframe.upper()  # "1M", "5M", "15M", "1H"
+        # Use 3M credentials for 3M timeframe
         bot_token = (
-            os.getenv(f"TELEGRAM_BOT_TOKEN_EXTGAP_{timeframe_upper}")
-            or os.getenv("TELEGRAM_BOT_TOKEN_EXTGAP_DETECTOR")  # Fallback for 1M
+            os.getenv("TELEGRAM_BOT_TOKEN_EXTGAP_3M")
             or os.getenv("TELEGRAM_BOT_TOKEN")
         )
         chat_ids_str = (
-            os.getenv(f"TELEGRAM_CHAT_IDS_EXTGAP_{timeframe_upper}")
-            or os.getenv("TELEGRAM_CHAT_IDS_EXTGAP_DETECTOR")  # Fallback for 1M
+            os.getenv("TELEGRAM_CHAT_IDS_EXTGAP_3M")
             or os.getenv("TELEGRAM_CHAT_IDS")
         )
         instance_id = os.getenv("INSTANCE_ID", "LOCAL")
@@ -766,104 +763,94 @@ class TelegramExtGapNotifier:
         await self._send_message(message)
 
     async def notify_gap_detection(
-        self, gap: ExternalGapDetection, is_first_gap: bool = False, sequence_number: int = 1
+        self, gap: ExternalGapDetection, is_first_gap: bool = False
     ) -> None:
         """Send gap detection notification with candle details.
 
         Args:
             gap: Detected gap
             is_first_gap: Whether this is the first gap (no trade) or reversal (trade)
-            sequence_number: Sequence number within current trend
         """
-        emoji = "⬆️" if gap.polarity == "bullish" else "⬇️"
+        polarity_emoji = "🔵" if gap.polarity == "bullish" else "🔴"
 
+        # Calculate time between gap opening and detection
+        time_diff = gap.detection_bar_time - gap.gap_opening_bar_time
+        hours = int(time_diff.total_seconds() // 3600)
+        minutes = int((time_diff.total_seconds() % 3600) // 60)
+
+        # Different footer message based on whether it's first gap or reversal
         if is_first_gap:
-            message = (
-                f"🚀 <b>PREMIER GAP DÉTECTÉ - {gap.symbol}</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"⏰ {gap.detection_bar_time.strftime('%H:%M:%S')} UTC\n"
-                f"📊 Polarité: <b>{gap.polarity.upper()} #{sequence_number}</b> {emoji}\n"
-                f"💰 Niveau: <b>{gap.gap_level:,.2f} USDT</b>\n"
-                f"🕒 Barre ouverture: {gap.gap_opening_bar_time.strftime('%H:%M:%S')}\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"⚠️ Pas de trade - attente inversion"
-            )
+            footer = "⏳ Waiting for reversal to start trading"
         else:
-            message = (
-                f"📊 <b>GAP {gap.polarity.upper()} #{sequence_number} DÉTECTÉ - {gap.symbol}</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"⏰ {gap.detection_bar_time.strftime('%H:%M:%S')} UTC\n"
-                f"💰 Niveau: <b>{gap.gap_level:,.2f} USDT</b>\n"
-                f"📈 Séquence: <b>{gap.polarity.upper()} #{sequence_number}</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"⏳ Entrée pending sur prochain candle open"
-            )
+            footer = "⏳ Entry pending on next candle open"
+
+        message = (
+            f"{polarity_emoji} <b>{gap.polarity.upper()} External Gap Detected</b>\n"
+            f"Symbol: {gap.symbol}\n"
+            f"Gap Level: ${gap.gap_level:.2f}\n"
+            f"───────────────\n"
+            f"📊 <b>Gap Formation:</b>\n"
+            f"Candidate set: {gap.gap_opening_bar_time.strftime('%Y-%m-%d %H:%M')} UTC\n"
+            f"Gap detected: {gap.detection_bar_time.strftime('%Y-%m-%d %H:%M')} UTC\n"
+            f"Duration: {hours}h {minutes}m\n"
+            f"───────────────\n"
+            f"{footer}"
+        )
         await self._send_message(message)
 
-    async def notify_trade_open(self, trade: ExtGapTrade, gap_level: float, sequence_number: int = 1) -> None:
+    async def notify_trade_open(self, trade: ExtGapTrade, gap_level: float) -> None:
         """Send trade open notification with gap details.
 
         Args:
             trade: Opened trade
             gap_level: Gap level that triggered entry
-            sequence_number: Sequence number for this trade
         """
-        side_text = "LONG" if trade.side == "long" else "SHORT"
-        polarity = "BULLISH" if trade.side == "long" else "BEARISH"
-        emoji = "📈" if trade.side == "long" else "📉"
+        side_emoji = "📈" if trade.side == "long" else "📉"
+
+        # Calculate distance from gap level
+        distance_from_gap = abs(trade.entry_price - gap_level)
+        distance_pct = (distance_from_gap / gap_level) * 100
 
         message = (
-            f"{emoji} <b>ENTRÉE {side_text} #{sequence_number} - {trade.symbol}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"⏰ {trade.entry_time.strftime('%H:%M:%S')} UTC\n"
-            f"💰 Prix d'entrée: <b>{trade.entry_price:,.2f} USDT</b>\n"
-            f"📊 Niveau gap: {gap_level:,.2f} USDT\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"💵 Position: ${trade.position_size_usd:.2f}\n"
-            f"🔢 Quantité: {trade.position_size_qty:.6f} BTC\n"
-            f"💸 Frais entrée: ${trade.entry_fee:.2f}\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🎯 Sortie: Reversal sur gap opposé"
+            f"{side_emoji} <b>{trade.side.upper()} Entry Executed</b>\n"
+            f"Symbol: {trade.symbol}\n"
+            f"Entry Time: {trade.entry_time.strftime('%Y-%m-%d %H:%M')} UTC\n"
+            f"───────────────\n"
+            f"Entry Price: ${trade.entry_price:.2f}\n"
+            f"Gap Level: ${gap_level:.2f}\n"
+            f"Distance: ${distance_from_gap:.2f} ({distance_pct:.2f}%)\n"
+            f"───────────────\n"
+            f"Position Size: ${trade.position_size_usd:.2f}\n"
+            f"Qty: {trade.position_size_qty:.6f}\n"
+            f"Entry Fee: ${trade.entry_fee:.2f}\n"
+            f"───────────────\n"
+            f"Exit: Reverse on opposite gap signal"
         )
         await self._send_message(message)
 
-    async def notify_trade_close(self, result: TradeResult, prev_sequence: int = 0, new_sequence: int = 1, new_polarity: str = "unknown") -> None:
+    async def notify_trade_close(self, result: TradeResult) -> None:
         """Send trade close notification.
 
         Args:
             result: Trade result
-            prev_sequence: Previous sequence number
-            new_sequence: New sequence number after reversal
-            new_polarity: New polarity after reversal
         """
         status_emoji = "✅" if result.status == "WIN" else "❌"
         pnl_sign = "+" if result.realized_pnl >= 0 else ""
         pnl_pct = (result.realized_pnl / result.position_size_usd) * 100
 
-        # Determine side and polarity emojis
-        old_polarity = "BEARISH" if result.side == "SHORT" else "BULLISH"
-        old_emoji = "🔴" if result.side == "SHORT" else "🟢"
-        new_emoji = "🟢" if new_polarity == "bullish" else "🔴"
-
-        # Calculate quantity in BTC
-        qty_btc = result.position_size_usd / result.entry_price
-
         message = (
-            f"🔄 <b>INVERSION DE TENDANCE - {result.market}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"⏰ {result.close_time.strftime('%H:%M:%S')} UTC\n"
-            f"{old_emoji} <b>{old_polarity} #{prev_sequence}</b> → {new_emoji} <b>{new_polarity.upper()} #{new_sequence}</b>\n"
-            f"\n"
-            f"💰 <b>P&L Position Fermée:</b>\n"
-            f"  {status_emoji} {result.side}: <b>{pnl_sign}{result.realized_pnl:.2f} USD ({pnl_sign}{pnl_pct:.2f}%)</b>\n"
-            f"  📊 Entrée: {result.entry_price:,.2f} → Sortie: {result.exit_price:,.2f}\n"
-            f"  🔢 Quantité: {qty_btc:.6f} BTC\n"
-            f"  💸 Frais totaux: ${result.total_fees:.2f}\n"
-            f"\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"💵 P&L cumulé: <b>{'+' if result.cumulative_pnl >= 0 else ''}{result.cumulative_pnl:.2f} USD</b>\n"
-            f"📊 W/L: {result.cumulative_wins}/{result.cumulative_losses}\n"
-            f"💸 Frais cumulés: ${result.cumulative_fees:.2f}"
+            f"{status_emoji} <b>Position Closed</b>\n"
+            f"Symbol: {result.market}\n"
+            f"Side: {result.side}\n"
+            f"Entry: ${result.entry_price:.2f}\n"
+            f"Exit: ${result.exit_price:.2f}\n"
+            f"P&L: {pnl_sign}${result.realized_pnl:.2f} ({pnl_sign}{pnl_pct:.2f}%)\n"
+            f"Fees: ${result.total_fees:.2f}\n"
+            f"Reason: {result.close_reason}\n"
+            f"───────────────\n"
+            f"Cumulative P&L: ${result.cumulative_pnl:.2f}\n"
+            f"Cumulative Fees: ${result.cumulative_fees:.2f}\n"
+            f"W/L: {result.cumulative_wins}/{result.cumulative_losses}"
         )
         await self._send_message(message)
 
@@ -1187,22 +1174,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--timeframe",
         type=str,
-        default="5m",
-        help="Kline interval (default: 5m)",
+        default="3m",
+        help="Kline interval (default: 3m)",
     )
 
     parser.add_argument(
         "--output",
         type=str,
-        default="data/binance_extgap_5m_gaps.csv",
-        help="Output CSV file for gaps (default: data/binance_extgap_5m_gaps.csv)",
+        default="data/binance_extgap_3m_gaps.csv",
+        help="Output CSV file for gaps (default: data/binance_extgap_3m_gaps.csv)",
     )
 
     parser.add_argument(
         "--trades-output",
         type=str,
-        default="data/binance_extgap_5m_trades.csv",
-        help="Output CSV file for trades (default: data/binance_extgap_5m_trades.csv)",
+        default="data/binance_extgap_3m_trades.csv",
+        help="Output CSV file for trades (default: data/binance_extgap_3m_trades.csv)",
     )
 
     parser.add_argument(

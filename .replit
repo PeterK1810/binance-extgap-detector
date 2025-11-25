@@ -41,15 +41,27 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Gap Detector"
+args = "Gap Detector 4-TF"
 
 [[workflows.workflow]]
-name = "Gap Detector"
+name = "Gap Detector 4-TF"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 binance_extgap_detector_v3_replit.py --timeframe 1m --stats-interval 10m"
+args = "./start_3_timeframes.sh"
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[userenv]
+
+[userenv.shared]
+TELEGRAM_BOT_TOKEN_EXTGAP_3M = "8586866654:AAF6hoImqAM46hhsfEFm0898ZNpFTqEZGKw"
+TELEGRAM_CHAT_IDS_EXTGAP_3M = "-1003358731201,1474566688"
+TELEGRAM_BOT_TOKEN_EXTGAP_5M = "8204135201:AAE7EMJP7aFGKR4NuJ5E90DpGaqEDvXRg3U"
+TELEGRAM_CHAT_IDS_EXTGAP_5M = "-1003203997188,1474566688"
+TELEGRAM_BOT_TOKEN_EXTGAP_15M = "8257546943:AAHFfRKns6u8VdOPzB1mjdCY1K7kYgomcY8"
+TELEGRAM_CHAT_IDS_EXTGAP_15M = "-1003208418021,1474566688"
+TELEGRAM_BOT_TOKEN_EXTGAP_1H = "8146581274:AAH9AzQzhttftcaiJbrnyRkUY4z2ZOpQJd0"
+TELEGRAM_CHAT_IDS_EXTGAP_1H = "-1002985538408,1474566688"
