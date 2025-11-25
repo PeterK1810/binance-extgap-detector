@@ -9,14 +9,15 @@ fi
 
 TIMEFRAME=$1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$WORKSPACE_ROOT"
 
 echo "🔄 Restarting ${TIMEFRAME} bot..."
 
-if ! supervisorctl -c supervisord.conf status > /dev/null 2>&1; then
+if ! supervisorctl -c config/supervisord.conf status > /dev/null 2>&1; then
     echo "❌ Supervisord not running"
     exit 1
 fi
 
-supervisorctl -c supervisord.conf restart "extgap_${TIMEFRAME}"
+supervisorctl -c config/supervisord.conf restart "extgap_${TIMEFRAME}"
 echo "✅ Bot restarted"

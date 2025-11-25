@@ -569,8 +569,9 @@ async def main():
 
     # Setup paths
     script_dir = Path(__file__).parent
-    output_path = Path(args.output) if args.output else script_dir / DEFAULT_OUTPUT_DIR / "extgap_detector_v1_gaps.csv"
-    log_path = script_dir / DEFAULT_LOG_DIR / "extgap_detector_v1.log"
+    workspace_root = script_dir.parent.parent
+    output_path = Path(args.output) if args.output else workspace_root / "data" / "detectors" / "extgap_detector_v1_gaps.csv"
+    log_path = workspace_root / "logs" / "detectors" / "extgap_detector_v1.log"
 
     # Setup logging
     setup_logging(log_path, args.log_level)

@@ -1,9 +1,237 @@
 # Multi-Timeframe Bot Deployment - Implementation Progress
 
-**Last Updated:** 2025-11-25
-**Status:** ✅ Implementation Complete - Ready for Testing
+**Last Updated:** 2025-11-25 14:50 UTC
+**Status:** 🚧 IN PROGRESS - 4-Timeframe Upgrade (3m, 5m, 15m, 1h)
 **Environment:** Replit
-**Timeframes:** 3m, 15m, 1h
+**Target Timeframes:** 3m, 5m, 15m, 1h (adding 5m, upgrading to French notifications)
+
+---
+
+## 🔄 CURRENT SESSION - 4-Timeframe Upgrade (2025-11-25)
+
+### Session Goal
+Upgrade from 3-timeframe (3m, 15m, 1h) to 4-timeframe (3m, 5m, 15m, 1h) deployment with:
+- French-format Telegram notifications (matching README.md template)
+- Sequence number tracking (#1, #2, #3) for all bots
+- Per-timeframe stats intervals (3m=30m, 5m=1h, 15m=2h, 1h=4h)
+- Fixed default timeframe arguments
+- Supervisord configuration for all 4 bots
+
+### Implementation Progress
+
+#### ✅ Phase 1: Cleanup and Preparation (COMPLETED)
+**Timestamp:** 2025-11-25 14:48 UTC
+
+**Actions Taken:**
+1. Created `archive/` directory
+2. Moved `binance_extgap_indicator_2m.py` to `archive/binance_extgap_indicator_2m.py`
+   - Reason: 2m bot not part of 4-timeframe requirement
+   - Kept for reference (has working French notifications)
+3. Fixed broken symlink `binance_extgap_indicator_1m.py`
+   - Old: Pointed to non-existent `binance_extgap_indicator.py`
+   - New: Points to `binance_extgap_indicator_3m.py`
+4. Verified `.env` has all 4 Telegram tokens:
+   - ✅ `TELEGRAM_BOT_TOKEN_EXTGAP_3M` (value: 8586866654:...)
+   - ✅ `TELEGRAM_BOT_TOKEN_EXTGAP_5M` (value: 8204135201:...)
+   - ✅ `TELEGRAM_BOT_TOKEN_EXTGAP_15M` (value: 8257546943:...)
+   - ✅ `TELEGRAM_BOT_TOKEN_EXTGAP_1H` (value: 8146581274:...)
+
+**Files Modified:**
+- Created: `archive/` directory
+- Moved: `binance_extgap_indicator_2m.py` → `archive/binance_extgap_indicator_2m.py`
+- Modified: `binance_extgap_indicator_1m.py` symlink target
+
+**Verification Commands:**
+```bash
+ls -lh archive/
+ls -lh binance_extgap_indicator_1m.py  # Should show -> binance_extgap_indicator_3m.py
+grep TELEGRAM_BOT_TOKEN_EXTGAP_ .env | grep -E "(3M|5M|15M|1H)"
+```
+
+#### ✅ Phase 2: Fix Default Timeframe Arguments (COMPLETED)
+**Timestamp:** 2025-11-25 14:49 UTC
+
+**Problem:** Bot files had incorrect default timeframe arguments causing silent failures.
+
+**Files Modified:**
+1. `binance_extgap_indicator_5m.py:1177`
+   - Changed: `default="3m"` → `default="5m"`
+   - Also updated help text: `"Kline interval (default: 3m)"` → `"Kline interval (default: 5m)"`
+
+2. `binance_extgap_indicator_15m.py:1177`
+   - Changed: `default="3m"` → `default="15m"`
+   - Also updated help text: `"Kline interval (default: 3m)"` → `"Kline interval (default: 15m)"`
+
+3. `binance_extgap_indicator_1h.py:1177`
+   - Changed: `default="3m"` → `default="1h"`
+   - Also updated help text: `"Kline interval (default: 3m)"` → `"Kline interval (default: 1h)"`
+
+**Verification Commands:**
+```bash
+grep -A 2 '"--timeframe"' binance_extgap_indicator_5m.py | grep default
+grep -A 2 '"--timeframe"' binance_extgap_indicator_15m.py | grep default
+grep -A 2 '"--timeframe"' binance_extgap_indicator_1h.py | grep default
+# Each should show their respective timeframe (5m, 15m, 1h)
+```
+
+#### ✅ Phase 3: Add Sequence Number Tracking (COMPLETED)
+**Timestamp:** 2025-11-25 14:50 UTC
+
+**Implementation:** Added full sequence tracking logic to all 4 bots using detector v1/v2 as reference.
+
+**Changes Applied to Each Bot (3m, 5m, 15m, 1h):**
+
+1. **ExternalGapDetection dataclass** (~line 91):
+   - Added field: `sequence_number: int = 1  # Sequence number within current trend`
+
+2. **ExternalGapSymbolState.__init__()** (~line 180-186):
+   - Added: `self.current_sequence_number: int = 0`
+   - Added: `self.last_sequence_number: int = 0  # Previous sequence before reversal`
+
+3. **ExternalGapSymbolState.add_candle()** (~line 265-276):
+   - Added sequence tracking logic BEFORE creating ExternalGapDetection:
+   ```python
+   # Update sequence tracking
+   if is_first_gap:
+       # First gap detected - initialize sequence
+       self.current_sequence_number = 1
+   elif self.last_gap_polarity is not None and self.last_gap_polarity != current_polarity:
+       # Reversal: save previous sequence and reset to 1
+       self.last_sequence_number = self.current_sequence_number
+       self.current_sequence_number = 1
+   else:
+       # Same polarity - increment sequence
+       self.current_sequence_number += 1
+   ```
+
+4. **ExternalGapDetection creation** (~line 278-287):
+   - Added parameter: `sequence_number=self.current_sequence_number`
+
+**Files Modified:**
+- `binance_extgap_indicator_3m.py` (lines 91, 184-186, 265-287)
+- `binance_extgap_indicator_5m.py` (lines 91, 184-186, 265-287)
+- `binance_extgap_indicator_15m.py` (lines 91, 184-186, 265-287)
+- `binance_extgap_indicator_1h.py` (lines 91, 184-186, 265-287)
+
+**Verification Commands:**
+```bash
+# Check ExternalGapDetection dataclass has sequence_number field
+grep -A 10 "class ExternalGapDetection" binance_extgap_indicator_3m.py | grep sequence_number
+
+# Check ExternalGapSymbolState has tracking variables
+grep -A 5 "# Sequence tracking" binance_extgap_indicator_3m.py
+
+# Check detection logic includes sequence
+grep -B 3 "self.current_sequence_number = 1" binance_extgap_indicator_3m.py
+```
+
+**Testing Plan for Phase 3:**
+- Launch bot in foreground mode
+- Wait for first gap → should show sequence #1
+- Wait for second gap (same polarity) → should show sequence #2
+- Wait for reversal gap → should reset to sequence #1
+
+#### 🚧 Phase 4: Update Telegram Notification Format to French (PENDING)
+**Status:** NOT STARTED
+**Estimated Lines:** ~200 lines per bot (TelegramExtGapNotifier class)
+
+**Plan:**
+- Use archive/binance_extgap_indicator_2m.py as template (has working French format)
+- Update TelegramExtGapNotifier class in all 4 bots (3m, 5m, 15m, 1h)
+- Changes needed:
+  1. Method signatures: Add sequence_number, prev_sequence, new_polarity parameters
+  2. Message templates: Replace English with French, change `───` to `━━━`
+  3. notify_startup(): French format
+  4. notify_gap_detection(): Show sequence in title
+  5. notify_trade_open(): Show sequence
+  6. notify_trade_close(): Show reversal transition (e.g., "🔴 BEARISH #2 → 🟢 BULLISH #1")
+  7. notify_hourly_stats(): Show current sequence
+  8. Update method calls in main loop (~lines 1050-1065) to pass sequence numbers
+
+**Files to Modify:**
+- `binance_extgap_indicator_3m.py` (TelegramExtGapNotifier class ~lines 653-855)
+- `binance_extgap_indicator_5m.py` (TelegramExtGapNotifier class ~lines 653-855)
+- `binance_extgap_indicator_15m.py` (TelegramExtGapNotifier class ~lines 653-855)
+- `binance_extgap_indicator_1h.py` (TelegramExtGapNotifier class ~lines 653-855)
+
+#### 🚧 Phase 5: Update Stats Interval Per Timeframe (PENDING)
+**Status:** NOT STARTED
+**Estimated Lines:** 1 line per bot (default stats-interval argument)
+
+**Plan:**
+- Update default stats interval argument (~line 1156) in each bot:
+  - 3m bot: `default="30m"`
+  - 5m bot: `default="1h"`
+  - 15m bot: `default="2h"`
+  - 1h bot: `default="4h"`
+
+**Files to Modify:**
+- `binance_extgap_indicator_3m.py:~1156`
+- `binance_extgap_indicator_5m.py:~1156`
+- `binance_extgap_indicator_15m.py:~1156`
+- `binance_extgap_indicator_1h.py:~1156`
+
+#### 🚧 Phase 6: Update Supervisord Configuration (PENDING)
+**Status:** NOT STARTED
+
+**Plan:**
+- Add 5m bot program definition to `supervisord.conf`
+- Verify 3m, 15m, 1h programs have correct --stats-interval flags
+- Update [group:extgap_bots] to include all 4: `programs=extgap_3m,extgap_5m,extgap_15m,extgap_1h`
+
+**Files to Modify:**
+- `supervisord.conf`
+
+#### 🚧 Phase 7: Update start_all_bots.sh Script (PENDING)
+**Status:** NOT STARTED
+
+**Plan:**
+- Add validation loop to check all 4 Telegram tokens before launching
+
+**Files to Modify:**
+- `start_all_bots.sh`
+
+### Recovery Instructions
+
+**If this session is interrupted, resume with:**
+
+1. **Check Phase 3 completion:**
+   ```bash
+   grep "sequence_number: int = 1" binance_extgap_indicator_3m.py
+   # Should return line with sequence_number field in ExternalGapDetection
+   ```
+
+2. **If Phase 3 complete, start Phase 4:**
+   - Read `archive/binance_extgap_indicator_2m.py` for French notification template (lines 653-851)
+   - Read `/home/runner/.claude/plans/tidy-munching-owl.md` for detailed Phase 4 plan
+   - Start with `binance_extgap_indicator_3m.py` TelegramExtGapNotifier class
+
+3. **Quick status check:**
+   ```bash
+   ls -lh archive/binance_extgap_indicator_2m.py  # Should exist
+   grep 'default="5m"' binance_extgap_indicator_5m.py  # Should exist
+   grep "self.current_sequence_number" binance_extgap_indicator_3m.py  # Should exist
+   ```
+
+### Rollback Commands (If Needed)
+
+```bash
+# Stop all bots
+bash stop_all_bots.sh
+
+# Restore 2m bot
+mv archive/binance_extgap_indicator_2m.py .
+
+# Revert changes
+git checkout binance_extgap_indicator_*.py
+
+# Restart old configuration
+bash start_all_bots.sh
+```
+
+---
+
+## 📊 PREVIOUS SESSION - 3-Timeframe Deployment (Historical)
 
 ---
 

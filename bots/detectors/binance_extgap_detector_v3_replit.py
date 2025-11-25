@@ -1116,14 +1116,15 @@ async def main():
 
     # Setup paths
     script_dir = Path(__file__).parent
+    workspace_root = script_dir.parent.parent
     symbol_lower = config["symbol"].lower()
     timeframe = config["timeframe"]
 
     csv_filename = f"extgap_v3_{symbol_lower}_{timeframe}_gaps.csv"
     log_filename = f"extgap_v3_{symbol_lower}_{timeframe}.log"
 
-    output_path = script_dir / DEFAULT_OUTPUT_DIR / csv_filename
-    log_path = script_dir / DEFAULT_LOG_DIR / log_filename
+    output_path = workspace_root / "data" / "detectors" / csv_filename
+    log_path = workspace_root / "logs" / "detectors" / log_filename
 
     # Setup logging
     setup_logging(log_path, level=config.get("log_level", "INFO"))

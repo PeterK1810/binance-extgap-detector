@@ -4,7 +4,9 @@
 
 set -e
 
-cd /home/runner/workspace
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$WORKSPACE_ROOT"
 
 echo "=========================================="
 echo "External Gap Indicator - Multi-Timeframe Launcher"
@@ -15,51 +17,51 @@ trap 'echo "Shutting down all bots..."; kill $(jobs -p) 2>/dev/null; exit 0' SIG
 
 PIDS=()
 
-mkdir -p logs data
+mkdir -p data/indicators/gaps data/indicators/trades logs/indicators
 
 echo "🚀 Starting 3m bot..."
-python3 binance_extgap_indicator_3m.py \
+python3 bots/indicators/binance_extgap_indicator_3m.py \
     --symbol BTCUSDT \
     --timeframe 3m \
-    --output data/binance_extgap_3m_gaps.csv \
-    --trades-output data/binance_extgap_3m_trades.csv \
-    >> logs/extgap_indicator_3m.log 2>&1 &
+    --output data/indicators/gaps/binance_extgap_3m_gaps.csv \
+    --trades-output data/indicators/trades/binance_extgap_3m_trades.csv \
+    >> logs/indicators/extgap_indicator_3m.log 2>&1 &
 PID_3M=$!
 PIDS+=($PID_3M)
 echo "   Started 3m with PID: $PID_3M"
 sleep 3
 
 echo "🚀 Starting 5m bot..."
-python3 binance_extgap_indicator_5m.py \
+python3 bots/indicators/binance_extgap_indicator_5m.py \
     --symbol BTCUSDT \
     --timeframe 5m \
-    --output data/binance_extgap_5m_gaps.csv \
-    --trades-output data/binance_extgap_5m_trades.csv \
-    >> logs/extgap_indicator_5m.log 2>&1 &
+    --output data/indicators/gaps/binance_extgap_5m_gaps.csv \
+    --trades-output data/indicators/trades/binance_extgap_5m_trades.csv \
+    >> logs/indicators/extgap_indicator_5m.log 2>&1 &
 PID_5M=$!
 PIDS+=($PID_5M)
 echo "   Started 5m with PID: $PID_5M"
 sleep 3
 
 echo "🚀 Starting 15m bot..."
-python3 binance_extgap_indicator_15m.py \
+python3 bots/indicators/binance_extgap_indicator_15m.py \
     --symbol BTCUSDT \
     --timeframe 15m \
-    --output data/binance_extgap_15m_gaps.csv \
-    --trades-output data/binance_extgap_15m_trades.csv \
-    >> logs/extgap_indicator_15m.log 2>&1 &
+    --output data/indicators/gaps/binance_extgap_15m_gaps.csv \
+    --trades-output data/indicators/trades/binance_extgap_15m_trades.csv \
+    >> logs/indicators/extgap_indicator_15m.log 2>&1 &
 PID_15M=$!
 PIDS+=($PID_15M)
 echo "   Started 15m with PID: $PID_15M"
 sleep 3
 
 echo "🚀 Starting 1h bot..."
-python3 binance_extgap_indicator_1h.py \
+python3 bots/indicators/binance_extgap_indicator_1h.py \
     --symbol BTCUSDT \
     --timeframe 1h \
-    --output data/binance_extgap_1h_gaps.csv \
-    --trades-output data/binance_extgap_1h_trades.csv \
-    >> logs/extgap_indicator_1h.log 2>&1 &
+    --output data/indicators/gaps/binance_extgap_1h_gaps.csv \
+    --trades-output data/indicators/trades/binance_extgap_1h_trades.csv \
+    >> logs/indicators/extgap_indicator_1h.log 2>&1 &
 PID_1H=$!
 PIDS+=($PID_1H)
 echo "   Started 1h with PID: $PID_1H"

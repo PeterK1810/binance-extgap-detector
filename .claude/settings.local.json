@@ -1,21 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(if [ -f \"./status_extgap_indicator.sh\" ])",
-      "Bash(then ./status_extgap_indicator.sh)",
-      "Bash(else echo \"Status script not found\")",
-      "Bash(fi)",
-      "Bash(bash:*)",
-      "Bash(pgrep:*)",
-      "Bash(python3:*)",
-      "Bash(pkill:*)",
-      "Bash(env)",
-      "Bash(cat:*)",
-      "Bash(git check-ignore:*)",
-      "WebSearch",
-      "WebFetch(domain:developers.binance.com)",
-      "Bash(curl:*)",
-      "Bash(kill:*)"
+      "Bash(done)",
+      "Bash(md5sum:*)",
+      "Bash(wc:*)",
+      "Bash(ln:*)",
+      "Bash(tree:*)",
+      "Bash(find:*)",
+      "Bash(sort:*)",
+      "Bash(xargs -I {} bash -c 'echo \"\"\"\"=== $(basename {}) ===\"\"\"\"; head -3 {} 2>/dev/null | tail -1')",
+      "Bash(supervisorctl:*)",
+      "Bash(bash:*)"
     ],
     "deny": [],
     "ask": []

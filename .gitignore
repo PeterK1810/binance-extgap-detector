@@ -13,11 +13,17 @@ env/
 ENV/
 
 # Data outputs
-data/*.csv
+data/indicators/gaps/*.csv
+data/indicators/trades/*.csv
+data/detectors/*.csv
+data/archive/*.csv
 data/*.json
 
 # Logs
-logs/*.log
+logs/indicators/*.log
+logs/detectors/*.log
+logs/supervisor/*.log
+logs/archive/*.log
 *.log
 
 # PID files
@@ -35,5 +41,7 @@ logs/*.log
 Thumbs.db
 
 # Environment
+config/.env
+config/.env.local
 .env
 .env.local

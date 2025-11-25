@@ -2,7 +2,7 @@
 # =============================================================
 # This file tells Replit to launch all 3 bots via supervisord
 
-run = ["bash", "start_all_bots.sh"]
+run = ["bash", "scripts/management/start_all_bots.sh"]
 
 modules = ["bash", "nix", "python-3.11"]
 
@@ -20,7 +20,7 @@ PYTHONUNBUFFERED = "1"
 channel = "stable-25_05"
 
 [deployment]
-run = ["bash", "-c", "./start_3_timeframes.sh"]
+run = ["sh", "-c", "./scripts/management/start_3_timeframes.sh"]
 deploymentTarget = "vm"
 ignorePorts = true
 

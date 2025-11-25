@@ -38,20 +38,21 @@ done
 
 # Set up paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PYTHON_SCRIPT="$SCRIPT_DIR/binance_extgap_indicator_${TIMEFRAME}.py"
-LOG_FILE="$SCRIPT_DIR/logs/extgap_indicator_${TIMEFRAME}.log"
-PID_FILE="$SCRIPT_DIR/binance_extgap_indicator_${TIMEFRAME}.pid"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PYTHON_SCRIPT="$PROJECT_ROOT/bots/indicators/binance_extgap_indicator_${TIMEFRAME}.py"
+LOG_FILE="$PROJECT_ROOT/logs/indicators/extgap_indicator_${TIMEFRAME}.log"
+PID_FILE="$PROJECT_ROOT/binance_extgap_indicator_${TIMEFRAME}.pid"
 
 # Create directories
-mkdir -p "$SCRIPT_DIR/data"
-mkdir -p "$SCRIPT_DIR/logs"
+mkdir -p "$PROJECT_ROOT/data/indicators/gaps"
+mkdir -p "$PROJECT_ROOT/data/indicators/trades"
+mkdir -p "$PROJECT_ROOT/logs/indicators"
 
 # Check if script exists
 if [ ! -f "$PYTHON_SCRIPT" ]; then
     echo "Error: Script not found: $PYTHON_SCRIPT"
     echo "Using generic script instead..."
-    PYTHON_SCRIPT="$SCRIPT_DIR/binance_extgap_indicator_5m.py"
+    PYTHON_SCRIPT="$PROJECT_ROOT/bots/indicators/binance_extgap_indicator_5m.py"
 fi
 
 # Check if already running
@@ -87,8 +88,8 @@ if [ "$BACKGROUND" = true ]; then
     nohup python "$PYTHON_SCRIPT" \
         --symbol "$SYMBOL" \
         --timeframe "$TIMEFRAME" \
-        --output "data/binance_extgap_${TIMEFRAME}_gaps.csv" \
-        --trades-output "data/binance_extgap_${TIMEFRAME}_trades.csv" \
+        --output "data/indicators/gaps/binance_extgap_${TIMEFRAME}_gaps.csv" \
+        --trades-output "data/indicators/trades/binance_extgap_${TIMEFRAME}_trades.csv" \
         > "$LOG_FILE" 2>&1 &
 
     echo $! > "$PID_FILE"
@@ -96,13 +97,13 @@ if [ "$BACKGROUND" = true ]; then
     echo "Log file: $LOG_FILE"
     echo "PID file: $PID_FILE"
     echo ""
-    echo "To stop: ./stop_extgap_indicator.sh --timeframe $TIMEFRAME"
+    echo "To stop: scripts/management/stop_extgap_indicator.sh --timeframe $TIMEFRAME"
     echo "To view logs: tail -f $LOG_FILE"
 else
     echo "Starting external gap indicator ($TIMEFRAME) in foreground..."
     python "$PYTHON_SCRIPT" \
         --symbol "$SYMBOL" \
         --timeframe "$TIMEFRAME" \
-        --output "data/binance_extgap_${TIMEFRAME}_gaps.csv" \
-        --trades-output "data/binance_extgap_${TIMEFRAME}_trades.csv"
+        --output "data/indicators/gaps/binance_extgap_${TIMEFRAME}_gaps.csv" \
+        --trades-output "data/indicators/trades/binance_extgap_${TIMEFRAME}_trades.csv"
 fi
