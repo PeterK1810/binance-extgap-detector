@@ -20,7 +20,7 @@ PYTHONUNBUFFERED = "1"
 channel = "stable-25_05"
 
 [deployment]
-run = ["sh", "-c", "./scripts/management/start_3_timeframes.sh"]
+run = ["sh", "-c", "python bots/indicators/binance_extgap_indicator_3m.py --symbol BTCUSDT --timeframe 3m & python   bots/indicators/binance_extgap_indicator_15m.py --symbol BTCUSDT --timeframe 15m & python   bots/indicators/binance_extgap_indicator_1h.py --symbol BTCUSDT --timeframe 1h"]
 deploymentTarget = "vm"
 ignorePorts = true
 

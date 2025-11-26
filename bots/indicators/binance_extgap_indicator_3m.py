@@ -33,7 +33,7 @@ import signal
 import sys
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Deque, Dict, List, Optional, Tuple
 
@@ -58,6 +58,57 @@ BINANCE_FUTURES_API = "https://fapi.binance.com"
 DEFAULT_ENTRY_FEE_RATE = 0.0003  # 0.03% (0.02% fee + 0.01% slippage)
 DEFAULT_EXIT_FEE_RATE = 0.0003  # 0.03% (0.02% fee + 0.01% slippage)
 DEFAULT_NOTIONAL = 1000.0
+
+# Timeframe in minutes for 3m indicator
+TIMEFRAME_MINUTES = 3
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# HELPER FUNCTIONS
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def is_candle_aligned(open_time: datetime, timeframe_minutes: int) -> bool:
+    """Check if candle open time aligns to timeframe boundary.
+
+    Examples:
+        For 3m timeframe: 10:00, 10:03, 10:06 are aligned
+        For 1h timeframe: 10:00, 11:00, 12:00 are aligned
+
+    Args:
+        open_time: Candle open timestamp
+        timeframe_minutes: Timeframe in minutes
+
+    Returns:
+        True if aligned to timeframe boundary
+    """
+    timestamp_ms = int(open_time.timestamp() * 1000)
+    timeframe_ms = timeframe_minutes * 60 * 1000
+    return (timestamp_ms % timeframe_ms) == 0
+
+
+def get_current_stats_boundary(now: datetime, interval_minutes: int) -> datetime:
+    """Get the current stats interval boundary (floored to interval).
+
+    Examples:
+        For 15m interval at 10:37 -> returns 10:30
+        For 1h interval at 10:37 -> returns 10:00
+        For 4h interval at 10:37 -> returns 08:00
+
+    Args:
+        now: Current UTC datetime
+        interval_minutes: Stats interval in minutes
+
+    Returns:
+        Datetime floored to the interval boundary
+    """
+    # Convert to minutes since midnight UTC
+    minutes_since_midnight = now.hour * 60 + now.minute
+    # Floor to interval boundary
+    boundary_minutes = (minutes_since_midnight // interval_minutes) * interval_minutes
+    boundary_hour = boundary_minutes // 60
+    boundary_minute = boundary_minutes % 60
+    return now.replace(hour=boundary_hour, minute=boundary_minute, second=0, microsecond=0)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -98,7 +149,11 @@ class ExternalGapDetection:
     gap_opening_bar_time: datetime  # When gap level was set
     detection_bar_time: datetime  # When gap was detected
     is_first_gap: bool = False  # True if first gap (no trade), False if reversal (trade)
+    is_reversal: bool = False  # True if this gap reverses the previous trend
     sequence_number: int = 1  # Sequence number within current trend
+    group_size_before_cleanup: int = 0  # Group size before cleanup (for debugging)
+    prev_gap_level: float = 0.0  # Previous gap level (for trade close notification on reversal)
+    prev_sequence_number: int = 0  # Previous sequence number (for trade close notification)
 
 
 @dataclass
@@ -153,6 +208,8 @@ class GapStatistics:
     current_trend: Optional[str] = None
     current_sequence: int = 0
     gap_timestamps: List[datetime] = field(default_factory=list)
+    winning_pnls: List[float] = field(default_factory=list)
+    losing_pnls: List[float] = field(default_factory=list)
 
     @property
     def uptime_minutes(self) -> float:
@@ -176,13 +233,17 @@ class GapStatistics:
 
     @property
     def avg_winning_trade(self) -> float:
-        """Calculate average winning trade P&L (placeholder - needs trade tracking)."""
-        return 0.0  # Will be updated when trades are tracked
+        """Calculate average winning trade P&L."""
+        if not self.winning_pnls:
+            return 0.0
+        return sum(self.winning_pnls) / len(self.winning_pnls)
 
     @property
     def avg_losing_trade(self) -> float:
-        """Calculate average losing trade P&L (placeholder - needs trade tracking)."""
-        return 0.0  # Will be updated when trades are tracked
+        """Calculate average losing trade P&L."""
+        if not self.losing_pnls:
+            return 0.0
+        return sum(self.losing_pnls) / len(self.losing_pnls)
 
     def record_gap(self, polarity: str, is_reversal: bool, sequence: int) -> None:
         """Record a gap detection."""
@@ -203,8 +264,10 @@ class GapStatistics:
         self.total_trades += 1
         if result.status == "WIN":
             self.winning_trades += 1
+            self.winning_pnls.append(result.net_pnl)
         elif result.status == "LOSS":
             self.losing_trades += 1
+            self.losing_pnls.append(result.net_pnl)
         self.cumulative_pnl = result.cumulative_pnl
         self.cumulative_volume_usd += result.position_size_usd
 
@@ -235,13 +298,16 @@ class GapStatistics:
 
 
 class ExternalGapSymbolState:
-    """Tracks external gaps for a single symbol using candidate tracking.
+    """Tracks external gaps for a single symbol using group-based candidate tracking.
+
+    This implementation mirrors the PineScript '[THE] eG v2' algorithm:
+    - Maintains a group of all bars since last gap
+    - Calculates candidates from group extremes
+    - On gap detection: cleans group and recalculates candidates
 
     External gaps are detected when price breaks beyond candidate extremes:
     - Bullish gap: Current low > bullish_candidate_high (lowest high since last gap)
     - Bearish gap: Current high < bearish_candidate_low (highest low since last gap)
-
-    This is more general than 3-candle FVG and detects gaps sooner.
     """
 
     def __init__(self, symbol: str):
@@ -253,35 +319,43 @@ class ExternalGapSymbolState:
         self.symbol = symbol
         self.candle_history: Deque[Candle] = deque(maxlen=500)
 
+        # Group tracking (all bars since last gap) - V3 PineScript algorithm
+        self.group_bar_times: Deque[datetime] = deque(maxlen=500)
+        self.group_highs: Deque[float] = deque(maxlen=500)
+        self.group_lows: Deque[float] = deque(maxlen=500)
+
+        # Candidate tracking (extremes calculated from group)
+        self.bearish_candidate_low: Optional[float] = None  # Highest low in group
+        self.bearish_candidate_idx: Optional[datetime] = None
+        self.bullish_candidate_high: Optional[float] = None  # Lowest high in group
+        self.bullish_candidate_idx: Optional[datetime] = None
+
         # Gap tracking
         self.last_gap_level: Optional[float] = None
         self.last_gap_polarity: Optional[str] = None  # "bullish" or "bearish"
-        self.last_gap_bar_idx: Optional[int] = None
-
-        # Candidate tracking (bars after last gap)
-        self.group_bars: List[Candle] = []  # Bars since last gap
-        self.bearish_candidate_low: Optional[float] = None  # Highest low
-        self.bearish_candidate_bar: Optional[Candle] = None
-        self.bullish_candidate_high: Optional[float] = None  # Lowest high
-        self.bullish_candidate_bar: Optional[Candle] = None
-
-        # Pending entry (set when reversal detected, executed on next candle open)
-        self.pending_entry_side: Optional[str] = None  # "long" or "short"
-        self.pending_entry_gap_level: Optional[float] = None
+        self.last_gap_opening_time: Optional[datetime] = None
 
         # First gap tracking (for first-reversal entry strategy)
         self.first_gap_detected = False
-        self.first_gap_polarity: Optional[str] = None  # Track first gap polarity
 
         # Sequence tracking
         self.current_sequence_number: int = 0
         self.last_sequence_number: int = 0  # Previous sequence before reversal
 
-        # Initialization flag
+        # Initialization flag (V3: waits for first gap to initialize)
         self.is_initialized = False
+
+        # Candle validation tracking
+        self.first_aligned_candle_received = False
+        self.last_candle_time: Optional[datetime] = None
 
     def add_candle(self, candle: Candle) -> Optional[ExternalGapDetection]:
         """Process new closed candle and detect external gaps.
+
+        Algorithm mirrors PineScript '[THE] eG v2':
+        1. Add candle to group arrays
+        2. If not initialized: find first gap using group extremes
+        3. If initialized: check gap against candidates, then clean group and recalculate
 
         Args:
             candle: Closed candle to process
@@ -291,151 +365,212 @@ class ExternalGapSymbolState:
         """
         self.candle_history.append(candle)
 
-        # First-time initialization (need at least 1 candle to start)
-        if not self.is_initialized:
-            self.bearish_candidate_low = candle.low
-            self.bearish_candidate_bar = candle
-            self.bullish_candidate_high = candle.high
-            self.bullish_candidate_bar = candle
-            self.group_bars.append(candle)
-            self.is_initialized = True
-            return None
-
-        # Check for new gap
-        gap_detected = False
-        is_bearish = False
-        gap_level = 0.0
-        gap_bar: Optional[Candle] = None
-
-        if (
-            self.bearish_candidate_low is not None
-            and candle.high < self.bearish_candidate_low
-        ):
-            # Bearish gap: current high < candidate low (highest low)
-            gap_detected = True
-            is_bearish = True
-            gap_level = self.bearish_candidate_low
-            gap_bar = self.bearish_candidate_bar
-
-        elif (
-            self.bullish_candidate_high is not None
-            and candle.low > self.bullish_candidate_high
-        ):
-            # Bullish gap: current low > candidate high (lowest high)
-            gap_detected = True
-            is_bearish = False
-            gap_level = self.bullish_candidate_high
-            gap_bar = self.bullish_candidate_bar
-
-        if gap_detected and gap_bar is not None:
-            current_polarity = "bearish" if is_bearish else "bullish"
-
-            # Check if this is first gap or a reversal
-            is_reversal = False
-            is_first_gap = False
-
-            if not self.first_gap_detected:
-                # First gap detected - record it but don't trade
-                self.first_gap_detected = True
-                self.first_gap_polarity = current_polarity
-                is_first_gap = True
-                LOGGER.info(
-                    f"{self.symbol}: First {current_polarity} gap detected at {gap_level:.2f} - waiting for reversal to start trading"
-                )
-            elif self.last_gap_polarity is not None and self.last_gap_polarity != current_polarity:
-                # This is a reversal - allow trading
-                is_reversal = True
-                LOGGER.info(
-                    f"{self.symbol}: {current_polarity.upper()} reversal gap detected at {gap_level:.2f} - preparing entry"
-                )
+        # Validate candle alignment
+        if not self.first_aligned_candle_received:
+            if is_candle_aligned(candle.open_time, TIMEFRAME_MINUTES):
+                LOGGER.info(f"First aligned candle received: {candle.open_time}")
+                self.first_aligned_candle_received = True
             else:
-                # Same polarity as first gap - still waiting for reversal
-                LOGGER.info(
-                    f"{self.symbol}: {current_polarity.upper()} gap detected at {gap_level:.2f} - still waiting for reversal"
+                LOGGER.warning(
+                    f"Skipping misaligned candle: {candle.open_time} (waiting for {TIMEFRAME_MINUTES}m boundary)"
                 )
+                return None
 
-            # Update sequence tracking
-            if is_first_gap:
-                # First gap detected - initialize sequence
-                self.current_sequence_number = 1
-            elif self.last_gap_polarity is not None and self.last_gap_polarity != current_polarity:
-                # Reversal: save previous sequence and reset to 1
-                self.last_sequence_number = self.current_sequence_number
-                self.current_sequence_number = 1
-            else:
-                # Same polarity - increment sequence
-                self.current_sequence_number += 1
+        # Check for missing candles
+        if self.last_candle_time is not None:
+            expected_next = self.last_candle_time + timedelta(minutes=TIMEFRAME_MINUTES)
+            if candle.open_time > expected_next:
+                missing_count = int(
+                    (candle.open_time - expected_next).total_seconds() / (TIMEFRAME_MINUTES * 60)
+                )
+                LOGGER.warning(
+                    f"GAP IN DATA: {self.last_candle_time} -> {candle.open_time} ({missing_count} candles missing)"
+                )
+        self.last_candle_time = candle.open_time
 
-            # Create gap detection with is_first_gap flag and sequence number
-            detection = ExternalGapDetection(
-                detected_at=datetime.now(timezone.utc),
-                symbol=self.symbol,
-                polarity=current_polarity,
-                gap_level=gap_level,
-                gap_opening_bar_time=gap_bar.close_time,
-                detection_bar_time=candle.close_time,
-                is_first_gap=is_first_gap,
-                sequence_number=self.current_sequence_number,
-            )
+        # Add current bar to group
+        self.group_bar_times.append(candle.open_time)
+        self.group_highs.append(candle.high)
+        self.group_lows.append(candle.low)
+
+        # ──────────────────────────────────────────────────────────────────────
+        # INITIALIZATION PHASE: Detect first gap using group extremes
+        # ──────────────────────────────────────────────────────────────────────
+
+        if not self.is_initialized and len(self.group_highs) >= 2:
+            # Find group extremes
+            max_low = max(self.group_lows)
+            min_high = min(self.group_highs)
+
+            # Check if current bar creates a gap
+            bearish_gap = candle.high < max_low
+            bullish_gap = candle.low > min_high
+
+            if not (bearish_gap or bullish_gap):
+                return None
+
+            # Gap detected! Initialize system
+            is_bearish = bearish_gap
+            polarity = "bearish" if is_bearish else "bullish"
+            gap_level = max_low if is_bearish else min_high
+
+            # Find which bar created the gap level
+            gap_opening_bar_time = None
+            for i in range(len(self.group_lows) - 1):
+                if is_bearish and self.group_lows[i] == max_low:
+                    gap_opening_bar_time = self.group_bar_times[i]
+                    break
+                if not is_bearish and self.group_highs[i] == min_high:
+                    gap_opening_bar_time = self.group_bar_times[i]
+                    break
+
+            if gap_opening_bar_time is None:
+                gap_opening_bar_time = self.group_bar_times[0]
 
             # Update gap tracking
             self.last_gap_level = gap_level
-            self.last_gap_polarity = current_polarity
-            self.last_gap_bar_idx = len(self.candle_history) - 1
+            self.last_gap_polarity = polarity
+            self.last_gap_opening_time = gap_opening_bar_time
 
-            # Clean up group: start fresh with current bar
-            self.group_bars = [candle]
+            # Initialize sequence
+            self.current_sequence_number = 1
+            self.first_gap_detected = True
 
-            # Reset candidates to current bar
+            # Store group size before cleanup
+            group_size_before = len(self.group_bar_times)
+
+            # Initialize candidates from bars AFTER gap opening bar
             self.bearish_candidate_low = candle.low
-            self.bearish_candidate_bar = candle
+            self.bearish_candidate_idx = candle.open_time
             self.bullish_candidate_high = candle.high
-            self.bullish_candidate_bar = candle
+            self.bullish_candidate_idx = candle.open_time
 
-            # Set pending entry only if reversal detected (not first gap)
-            if is_reversal:
-                self.pending_entry_side = "long" if not is_bearish else "short"
-                self.pending_entry_gap_level = gap_level
+            for i in range(len(self.group_bar_times)):
+                if self.group_bar_times[i] > gap_opening_bar_time:
+                    h = self.group_highs[i]
+                    l = self.group_lows[i]
+                    t = self.group_bar_times[i]
 
-            return detection
+                    if l > self.bearish_candidate_low:
+                        self.bearish_candidate_low = l
+                        self.bearish_candidate_idx = t
 
-        else:
-            # No gap - update candidates and group
-            self.group_bars.append(candle)
+                    if h < self.bullish_candidate_high:
+                        self.bullish_candidate_high = h
+                        self.bullish_candidate_idx = t
 
-            # Update bearish candidate (highest low)
-            if (
-                self.bearish_candidate_low is None
-                or candle.low > self.bearish_candidate_low
-            ):
+            self.is_initialized = True
+
+            LOGGER.info(
+                f"{self.symbol}: First {polarity} gap detected at {gap_level:.2f} - waiting for reversal to start trading"
+            )
+
+            return ExternalGapDetection(
+                detected_at=datetime.now(timezone.utc),
+                symbol=self.symbol,
+                polarity=polarity,
+                gap_level=gap_level,
+                gap_opening_bar_time=gap_opening_bar_time,
+                detection_bar_time=candle.close_time,
+                is_first_gap=True,
+                is_reversal=False,
+                sequence_number=self.current_sequence_number,
+                group_size_before_cleanup=group_size_before,
+            )
+
+        # ──────────────────────────────────────────────────────────────────────
+        # NORMAL OPERATION: Check gap against candidates
+        # ──────────────────────────────────────────────────────────────────────
+
+        if self.is_initialized:
+            # Update candidates if current bar has more extreme values
+            if self.bearish_candidate_low is None or candle.low > self.bearish_candidate_low:
                 self.bearish_candidate_low = candle.low
-                self.bearish_candidate_bar = candle
+                self.bearish_candidate_idx = candle.open_time
 
-            # Update bullish candidate (lowest high)
-            if (
-                self.bullish_candidate_high is None
-                or candle.high < self.bullish_candidate_high
-            ):
+            if self.bullish_candidate_high is None or candle.high < self.bullish_candidate_high:
                 self.bullish_candidate_high = candle.high
-                self.bullish_candidate_bar = candle
+                self.bullish_candidate_idx = candle.open_time
 
-            return None
+            # Check for new gap
+            bearish_gap = candle.high < self.bearish_candidate_low
+            bullish_gap = candle.low > self.bullish_candidate_high
 
-    def get_pending_entry(self, next_open: float) -> Optional[Tuple[str, float, float]]:
-        """Get pending entry and clear it.
+            if not (bearish_gap or bullish_gap):
+                return None
 
-        Args:
-            next_open: Open price of next candle
+            # Gap detected!
+            is_bearish = bearish_gap
+            polarity = "bearish" if is_bearish else "bullish"
+            gap_level = self.bearish_candidate_low if is_bearish else self.bullish_candidate_high
+            gap_opening_bar_time = self.bearish_candidate_idx if is_bearish else self.bullish_candidate_idx
 
-        Returns:
-            Tuple of (side, entry_price, gap_level) if pending entry exists, None otherwise
-        """
-        if self.pending_entry_side is not None:
-            side = self.pending_entry_side
-            gap_level = self.pending_entry_gap_level
-            self.pending_entry_side = None
-            self.pending_entry_gap_level = None
-            return (side, next_open, gap_level)
+            # Check if reversal
+            is_reversal = self.last_gap_polarity is not None and self.last_gap_polarity != polarity
+
+            if is_reversal:
+                self.last_sequence_number = self.current_sequence_number
+                self.current_sequence_number = 1  # Reset sequence
+                LOGGER.info(
+                    f"{self.symbol}: {polarity.upper()} reversal gap detected at {gap_level:.2f} - preparing entry"
+                )
+            else:
+                self.current_sequence_number += 1  # Increment sequence
+                LOGGER.info(
+                    f"{self.symbol}: {polarity.upper()} gap #{self.current_sequence_number} detected at {gap_level:.2f}"
+                )
+
+            # Store group size before cleanup (for analysis)
+            group_size_before = len(self.group_bar_times)
+
+            # Capture previous values BEFORE updating (for trade close notification on reversal)
+            prev_gap_level = self.last_gap_level or 0.0
+            prev_sequence = self.last_sequence_number if is_reversal else 0
+
+            # Update gap tracking
+            self.last_gap_level = gap_level
+            self.last_gap_polarity = polarity
+            self.last_gap_opening_time = gap_opening_bar_time
+
+            # Clean up group: remove bars <= gap opening bar
+            while len(self.group_bar_times) > 0 and self.group_bar_times[0] <= gap_opening_bar_time:
+                self.group_bar_times.popleft()
+                self.group_highs.popleft()
+                self.group_lows.popleft()
+
+            # Recalculate candidates from remaining group
+            if len(self.group_highs) > 0:
+                self.bearish_candidate_low = max(self.group_lows)
+                self.bullish_candidate_high = min(self.group_highs)
+
+                # Find indices of candidates
+                for i in range(len(self.group_lows)):
+                    if self.group_lows[i] == self.bearish_candidate_low:
+                        self.bearish_candidate_idx = self.group_bar_times[i]
+                    if self.group_highs[i] == self.bullish_candidate_high:
+                        self.bullish_candidate_idx = self.group_bar_times[i]
+            else:
+                # Group is empty, use current candle
+                self.bearish_candidate_low = candle.low
+                self.bearish_candidate_idx = candle.open_time
+                self.bullish_candidate_high = candle.high
+                self.bullish_candidate_idx = candle.open_time
+
+            return ExternalGapDetection(
+                detected_at=datetime.now(timezone.utc),
+                symbol=self.symbol,
+                polarity=polarity,
+                gap_level=gap_level,
+                gap_opening_bar_time=gap_opening_bar_time,
+                detection_bar_time=candle.close_time,
+                is_first_gap=False,
+                is_reversal=is_reversal,
+                sequence_number=self.current_sequence_number,
+                group_size_before_cleanup=group_size_before,
+                prev_gap_level=prev_gap_level,
+                prev_sequence_number=prev_sequence,
+            )
+
         return None
 
 
@@ -832,7 +967,7 @@ class TelegramExtGapNotifier:
             except TelegramError as e:
                 LOGGER.error(f"Failed to send Telegram message to {chat_id}: {e}")
 
-    async def notify_status(self, status: str, reason: str = "", symbol: str = "BTCUSDT", stats_interval: str = "10m") -> None:
+    async def notify_status(self, status: str, reason: str = "", symbol: str = "BTCUSDT", stats_interval: str = "15m") -> None:
         """Send status notification (start/stop).
 
         Args:
@@ -921,7 +1056,6 @@ class TelegramExtGapNotifier:
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"💵 Position: ${trade.position_size_usd:.2f}\n"
             f"🔢 Quantité: {trade.position_size_qty:.6f} BTC\n"
-            f"💸 Frais entrée: ${trade.entry_fee:.2f}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🎯 Sortie: Reversal sur gap opposé"
         )
@@ -1124,7 +1258,7 @@ async def listen_for_gaps(
     trade_recorder: TradeRecorder,
     trade_manager: ExtGapTradeManager,
     notifier: Optional[TelegramExtGapNotifier],
-    stats_interval: str = "10m",
+    stats_interval: str = "15m",
 ) -> None:
     """Main loop: connect to WebSocket, detect gaps and trade (no historical data).
 
@@ -1143,14 +1277,15 @@ async def listen_for_gaps(
     # Initialize statistics tracking
     gap_stats = GapStatistics()
 
-    # Parse stats interval
+    # Parse stats interval and initialize UTC-aligned boundary tracking
     stats_interval_minutes = parse_stats_interval(stats_interval)
-    last_stats_time = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    last_stats_boundary = get_current_stats_boundary(now, stats_interval_minutes)
 
     LOGGER.info(
         f"Starting external gap detection for {symbol} (no historical data - detecting new gaps only)"
     )
-    LOGGER.info(f"Statistics interval: {stats_interval} ({stats_interval_minutes} minutes)")
+    LOGGER.info(f"Statistics interval: {stats_interval} ({stats_interval_minutes} minutes, UTC-aligned)")
 
     # Track current price for potential exit on shutdown
     current_prices: Dict[str, float] = {}
@@ -1184,13 +1319,14 @@ async def listen_for_gaps(
                             gap_stats,
                         )
 
-                        # Check if stats should be sent
+                        # Check if stats should be sent (UTC-aligned)
                         now = datetime.now(timezone.utc)
-                        if (now - last_stats_time).total_seconds() >= stats_interval_minutes * 60:
+                        current_boundary = get_current_stats_boundary(now, stats_interval_minutes)
+                        if current_boundary > last_stats_boundary:
                             if notifier:
                                 await notifier.notify_stats(symbol, stats_interval, gap_stats.to_dict())
-                            last_stats_time = now
-                            LOGGER.info(f"Sent periodic statistics ({stats_interval})")
+                            last_stats_boundary = current_boundary
+                            LOGGER.info(f"Sent periodic statistics ({stats_interval}) at UTC boundary {current_boundary.strftime('%H:%M')}")
 
                     except Exception as e:
                         LOGGER.error(f"Error processing message: {e}", exc_info=True)
@@ -1277,43 +1413,6 @@ async def _handle_stream_message(
                 0.0,  # No new entry price for expiry
             )
 
-    # Check for pending entry from previous candle
-    pending_entry = symbol_state.get_pending_entry(candle.open)
-    if pending_entry is not None:
-        side, entry_price, gap_level = pending_entry
-        LOGGER.info(
-            f"{symbol}: Executing pending {side.upper()} entry at {entry_price:.2f}"
-        )
-
-        # Store previous gap level before reversal
-        prev_gap_level = symbol_state.last_gap_level or 0.0
-
-        # Open or reverse position
-        closed_trade, new_trade = trade_manager.open_or_reverse(
-            symbol, side, entry_price, candle.open_time
-        )
-
-        # Record and notify closed trade (reversal case - get gap polarity from new trade side)
-        if closed_trade is not None:
-            trade_recorder.record(closed_trade)
-            gap_stats.record_trade_close(closed_trade)
-            if notifier:
-                # New polarity is opposite of closed trade: if closed SHORT, new is bullish (LONG)
-                new_polarity = "bullish" if new_trade.side == "long" else "bearish"
-                await notifier.notify_trade_close(
-                    closed_trade,
-                    symbol_state.last_sequence_number,
-                    symbol_state.current_sequence_number,
-                    new_polarity,
-                    gap_level or 0.0,  # New gap level
-                    prev_gap_level,  # Previous gap level
-                    entry_price,  # New entry price
-                )
-
-        # Notify new trade (use gap_level from pending entry and current sequence number)
-        if notifier and gap_level is not None:
-            await notifier.notify_trade_open(new_trade, gap_level, symbol_state.current_sequence_number)
-
     # Detect new gap
     gap = symbol_state.add_candle(candle)
 
@@ -1321,9 +1420,8 @@ async def _handle_stream_message(
         # Record gap
         gap_recorder.record(gap)
 
-        # Update statistics
-        is_reversal = not gap.is_first_gap and symbol_state.last_sequence_number > 0
-        gap_stats.record_gap(gap.polarity, is_reversal, gap.sequence_number)
+        # Update statistics - use the is_reversal field from the gap detection
+        gap_stats.record_gap(gap.polarity, gap.is_reversal, gap.sequence_number)
 
         # Notify gap detection (pass is_first_gap flag and sequence number)
         if notifier:
@@ -1333,9 +1431,41 @@ async def _handle_stream_message(
             LOGGER.info(
                 f"{symbol}: {gap.polarity.upper()} gap at {gap.gap_level:.2f} - first gap, waiting for reversal"
             )
+        elif gap.is_reversal:
+            # Execute trade IMMEDIATELY on reversal using candle close price
+            side = "long" if gap.polarity == "bullish" else "short"
+            entry_price = candle.close  # Use close price immediately
+
+            LOGGER.info(
+                f"{symbol}: {gap.polarity.upper()} reversal at {gap.gap_level:.2f} - executing {side.upper()} entry at {entry_price:.2f}"
+            )
+
+            # Open or reverse position
+            closed_trade, new_trade = trade_manager.open_or_reverse(
+                symbol, side, entry_price, candle.close_time
+            )
+
+            # Record and notify closed trade (reversal case)
+            if closed_trade is not None:
+                trade_recorder.record(closed_trade)
+                gap_stats.record_trade_close(closed_trade)
+                if notifier:
+                    await notifier.notify_trade_close(
+                        closed_trade,
+                        gap.prev_sequence_number,  # Previous sequence from gap detection
+                        gap.sequence_number,  # Current sequence
+                        gap.polarity,  # New polarity
+                        gap.gap_level,  # New gap level
+                        gap.prev_gap_level,  # Previous gap level from gap detection
+                        entry_price,  # New entry price
+                    )
+
+            # Notify new trade
+            if notifier:
+                await notifier.notify_trade_open(new_trade, gap.gap_level, gap.sequence_number)
         else:
             LOGGER.info(
-                f"{symbol}: {gap.polarity.upper()} gap at {gap.gap_level:.2f} - pending entry on next candle"
+                f"{symbol}: {gap.polarity.upper()} gap #{gap.sequence_number} at {gap.gap_level:.2f}"
             )
 
 
@@ -1486,7 +1616,7 @@ def parse_args() -> argparse.Namespace:
         "--stats-interval",
         type=str,
         default=None,
-        help="Statistics notification interval (e.g., 10m, 30m, 1h). Defaults to STATS_INTERVAL_EXTGAP_3M env var or 10m",
+        help="Statistics notification interval (e.g., 15m, 30m, 1h). Defaults to STATS_INTERVAL_EXTGAP_3M env var or 15m",
     )
 
     return parser.parse_args()
@@ -1533,7 +1663,7 @@ async def main() -> None:
     if stats_interval is None:
         # Check for timeframe-specific environment variable
         tf_upper = args.timeframe.upper()
-        stats_interval = os.getenv(f"STATS_INTERVAL_EXTGAP_{tf_upper}", "10m")
+        stats_interval = os.getenv(f"STATS_INTERVAL_EXTGAP_{tf_upper}", "15m")
 
     LOGGER.info("=" * 80)
     LOGGER.info("Binance Futures External Gap Indicator")
