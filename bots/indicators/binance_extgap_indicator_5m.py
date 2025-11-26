@@ -153,6 +153,8 @@ class GapStatistics:
     current_trend: Optional[str] = None
     current_sequence: int = 0
     gap_timestamps: List[datetime] = field(default_factory=list)
+    winning_pnls: List[float] = field(default_factory=list)
+    losing_pnls: List[float] = field(default_factory=list)
 
     @property
     def uptime_minutes(self) -> float:
@@ -176,13 +178,17 @@ class GapStatistics:
 
     @property
     def avg_winning_trade(self) -> float:
-        """Calculate average winning trade P&L (placeholder - needs trade tracking)."""
-        return 0.0  # Will be updated when trades are tracked
+        """Calculate average winning trade P&L."""
+        if not self.winning_pnls:
+            return 0.0
+        return sum(self.winning_pnls) / len(self.winning_pnls)
 
     @property
     def avg_losing_trade(self) -> float:
-        """Calculate average losing trade P&L (placeholder - needs trade tracking)."""
-        return 0.0  # Will be updated when trades are tracked
+        """Calculate average losing trade P&L."""
+        if not self.losing_pnls:
+            return 0.0
+        return sum(self.losing_pnls) / len(self.losing_pnls)
 
     def record_gap(self, polarity: str, is_reversal: bool, sequence: int) -> None:
         """Record a gap detection."""
@@ -203,8 +209,10 @@ class GapStatistics:
         self.total_trades += 1
         if result.status == "WIN":
             self.winning_trades += 1
+            self.winning_pnls.append(result.realized_pnl)
         elif result.status == "LOSS":
             self.losing_trades += 1
+            self.losing_pnls.append(result.realized_pnl)
         self.cumulative_pnl = result.cumulative_pnl
         self.cumulative_volume_usd += result.position_size_usd
 

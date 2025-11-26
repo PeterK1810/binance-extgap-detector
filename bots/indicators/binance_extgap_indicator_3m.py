@@ -264,10 +264,10 @@ class GapStatistics:
         self.total_trades += 1
         if result.status == "WIN":
             self.winning_trades += 1
-            self.winning_pnls.append(result.net_pnl)
+            self.winning_pnls.append(result.realized_pnl)
         elif result.status == "LOSS":
             self.losing_trades += 1
-            self.losing_pnls.append(result.net_pnl)
+            self.losing_pnls.append(result.realized_pnl)
         self.cumulative_pnl = result.cumulative_pnl
         self.cumulative_volume_usd += result.position_size_usd
 
