@@ -342,7 +342,7 @@ class ExternalGapSymbolState:
                 LOGGER.info(
                     f"{self.symbol}: First {current_polarity} gap detected at {gap_level:.2f} - waiting for reversal to start trading"
                 )
-            elif self.first_gap_polarity != current_polarity:
+            elif self.last_gap_polarity is not None and self.last_gap_polarity != current_polarity:
                 # This is a reversal - allow trading
                 is_reversal = True
                 LOGGER.info(
