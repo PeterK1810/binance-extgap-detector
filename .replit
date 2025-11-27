@@ -32,6 +32,27 @@ externalPort = 80
 expertMode = true
 
 [workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Gap Detector Multi-TF"
+
+[[workflows.workflow]]
+name = "Gap Detector Multi-TF"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/management/run_all_timeframes.sh"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [userenv]
 
