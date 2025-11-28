@@ -563,13 +563,55 @@ def parse_args():
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
+def get_workspace_root(script_path: Path) -> Path:
+    """
+    Find workspace root directory robustly.
+    
+    Looks for marker files (requirements.txt, README.md, .git) by walking up
+    the directory tree from the script location. Falls back to script_dir.parent.parent
+    if markers not found. Can also use WORKSPACE_ROOT environment variable.
+    
+    Args:
+        script_path: Path to the current script file
+        
+    Returns:
+        Path to workspace root directory
+    """
+    # Check environment variable first
+    env_root = os.getenv("WORKSPACE_ROOT")
+    if env_root:
+        root_path = Path(env_root)
+        if root_path.exists() and root_path.is_dir():
+            return root_path.resolve()
+    
+    # Walk up from script directory looking for marker files
+    current = script_path.parent.resolve()
+    markers = ["requirements.txt", "README.md", ".git"]
+    max_depth = 10  # Prevent infinite loops
+    
+    for _ in range(max_depth):
+        # Check if any marker file exists in current directory
+        if any((current / marker).exists() for marker in markers):
+            return current
+        # Stop at filesystem root
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    
+    # Fallback: assume script is at bots/detectors/ or bots/indicators/
+    # This maintains backward compatibility
+    script_dir = script_path.parent
+    return script_dir.parent.parent
+
+
 async def main():
     """Main entry point"""
     args = parse_args()
 
     # Setup paths
     script_dir = Path(__file__).parent
-    workspace_root = script_dir.parent.parent
+    workspace_root = get_workspace_root(Path(__file__))
     output_path = Path(args.output) if args.output else workspace_root / "data" / "detectors" / "extgap_detector_v1_gaps.csv"
     log_path = workspace_root / "logs" / "detectors" / "extgap_detector_v1.log"
 

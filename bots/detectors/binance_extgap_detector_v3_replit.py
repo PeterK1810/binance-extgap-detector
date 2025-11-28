@@ -79,6 +79,48 @@ def parse_interval_minutes(interval: str) -> int:
         raise ValueError(f"Invalid interval format: {interval}. Use: 10m, 1h, 4h, etc.")
 
 
+def get_workspace_root(script_path: Path) -> Path:
+    """
+    Find workspace root directory robustly.
+    
+    Looks for marker files (requirements.txt, README.md, .git) by walking up
+    the directory tree from the script location. Falls back to script_dir.parent.parent
+    if markers not found. Can also use WORKSPACE_ROOT environment variable.
+    
+    Args:
+        script_path: Path to the current script file
+        
+    Returns:
+        Path to workspace root directory
+    """
+    # Check environment variable first
+    env_root = os.getenv("WORKSPACE_ROOT")
+    if env_root:
+        root_path = Path(env_root)
+        if root_path.exists() and root_path.is_dir():
+            return root_path.resolve()
+    
+    # Walk up from script directory looking for marker files
+    current = script_path.parent.resolve()
+    markers = ["requirements.txt", "README.md", ".git"]
+    max_depth = 10  # Prevent infinite loops
+    
+    for _ in range(max_depth):
+        # Check if any marker file exists in current directory
+        if any((current / marker).exists() for marker in markers):
+            return current
+        # Stop at filesystem root
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    
+    # Fallback: assume script is at bots/detectors/ or bots/indicators/
+    # This maintains backward compatibility
+    script_dir = script_path.parent
+    return script_dir.parent.parent
+
+
 def is_candle_aligned(open_time: datetime, timeframe_minutes: int) -> bool:
     """
     Check if candle open time aligns to timeframe boundary.
@@ -298,6 +340,7 @@ class GapDetectorState:
         self.last_entry_side: Optional[str] = None  # "LONG" or "SHORT"
         self.last_entry_time: Optional[datetime] = None
         self.last_entry_sequence: int = 0
+        self.prev_sequence_before_reversal: Optional[int] = None  # Sequence number before reversal (for notifications)
 
         # Cumulative statistics
         self.cumulative_pnl: float = 0.0
@@ -455,6 +498,9 @@ class GapDetectorState:
             # Calculate profit for previous position if reversal
             trade_result = None
             if is_reversal:
+                # Save previous sequence before reset (for notification)
+                # Use last_entry_sequence if we have a previous entry, otherwise use current_sequence_number
+                self.prev_sequence_before_reversal = self.last_entry_sequence if self.last_entry_price is not None else self.current_sequence_number
                 self.current_sequence_number = 1  # Reset sequence
                 self.reversals += 1
 
@@ -992,12 +1038,13 @@ class BinanceExtGapDetector:
                         )
 
                     prev_polarity = "bearish" if gap.polarity == "bullish" else "bullish"
-                    prev_sequence = gap.sequence_number - 1 if not gap.is_reversal else self.state.current_sequence_number - 1
-                    # Calculate previous sequence (was just before reset)
-                    if gap.polarity == "bullish":
-                        prev_sequence = self.state.bearish_gaps  # Total bearish gaps before this reversal
+                    # Use closed_sequence from trade_result if available (contains sequence before reversal)
+                    # Otherwise use prev_sequence_before_reversal (saved in add_candle before reset)
+                    if gap.trade_result and hasattr(gap.trade_result, 'closed_sequence'):
+                        prev_sequence = gap.trade_result.closed_sequence
                     else:
-                        prev_sequence = self.state.bullish_gaps - 1  # Total bullish gaps before this reversal (minus current one)
+                        # Use the sequence saved before reversal (handles case where trade_result is None)
+                        prev_sequence = self.state.prev_sequence_before_reversal or 1
 
                     await self.telegram.notify_reversal(
                         gap,
@@ -1116,7 +1163,7 @@ async def main():
 
     # Setup paths
     script_dir = Path(__file__).parent
-    workspace_root = script_dir.parent.parent
+    workspace_root = get_workspace_root(Path(__file__))
     symbol_lower = config["symbol"].lower()
     timeframe = config["timeframe"]
 
