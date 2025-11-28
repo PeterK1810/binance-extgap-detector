@@ -45,3 +45,6 @@ config/.env
 config/.env.local
 .env
 .env.local
+
+# Claude Code local cache
+.local/
