@@ -10,7 +10,13 @@
       "Bash(sort:*)",
       "Bash(xargs -I {} bash -c 'echo \"\"\"\"=== $(basename {}) ===\"\"\"\"; head -3 {} 2>/dev/null | tail -1')",
       "Bash(supervisorctl:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(pkill:*)",
+      "Bash(python3:*)",
+      "Bash(uv pip install:*)",
+      "Bash(uv add:*)",
+      "Bash(uv run:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []
