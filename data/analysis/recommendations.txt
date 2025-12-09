@@ -1,0 +1,33 @@
+EXTERNAL GAP TRADING OPTIMIZATION RECOMMENDATIONS
+==================================================
+
+1. [STRATEGY] Priority: HIGH
+   Very low win rate detected. The strategy is experiencing significant whipsaw in ranging markets.
+   Action: Consider adding filters to reduce trade frequency and improve signal quality.
+   Metric: Current Win Rate: 20.8%
+
+2. [EXECUTION] Priority: MEDIUM
+   2 trades were profitable before fees but became losses after fees.
+   Action: Consider reducing trade frequency or finding lower-fee execution venues.
+   Metric: Total Fee Drag: $28.80
+
+3. [FILTERS] Priority: HIGH
+   Implementing a minimum gap size filter could improve performance.
+   Action: Filter trades with gap size < 0.05%
+   Metric: Filtered Win Rate: 100.0% (vs 20.8% current), 1.0 trades
+
+4. [RISK MANAGEMENT] Priority: MEDIUM
+   Trades show favorable excursions that could be captured with take profit.
+   Action: Implement Take Profit at 0.67%
+   Metric: Avg Winning Trade MFE: 1.03%
+
+5. [RISK MANAGEMENT] Priority: HIGH
+   Trades experience significant adverse excursions before closing.
+   Action: Implement Stop Loss at 0.34%
+   Metric: 75th Percentile MAE: 0.34%
+
+6. [RISK MANAGEMENT] Priority: HIGH
+   Strategy experienced 16 consecutive losses.
+   Action: Consider implementing a circuit breaker after N consecutive losses.
+   Metric: Max Loss Streak: 16
+
