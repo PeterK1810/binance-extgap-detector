@@ -3,11 +3,11 @@
 Binance External Gap Signal Monitor - Multi-Symbol 15m
 ========================================================
 
-Monitors 6 Binance Futures symbols for external gap signals on 15m timeframe.
+Monitors 4 Binance Futures symbols for external gap signals on 15m timeframe.
 Tracks WIN/LOSE/NULL outcomes for every candle after gap detection.
 
 Features:
-- Multi-symbol monitoring (BTC, ETH, DOGE, SOL, BNB, XRP) in single process
+- Multi-symbol monitoring (BTC, ETH, SOL, XRP) in single process
 - Continuous signal tracking until reversal
 - Per-symbol and aggregated statistics
 - All-time max streak persistence
@@ -47,7 +47,7 @@ from dotenv import load_dotenv
 # ════════════════════════════════════════════════════════════════════════════
 
 # Symbols to monitor (Binance Futures)
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "DOGEUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"]
 
 # Timeframe
 TIMEFRAME = "15m"
@@ -810,11 +810,25 @@ class ExtGapSignalMonitor:
             return "win" if candle.is_red else "lose"
 
     async def process_candle(self, symbol: str, candle: Candle):
-        """Process a closed candle for a symbol."""
+        """Process a closed candle for a symbol.
+
+        IMPORTANT: The order of operations matters!
+        1. First, evaluate the candle against the CURRENT active signal (before any gap detection)
+        2. Then, detect gaps and update the signal polarity
+
+        This ensures that when a reversal happens, the candle that triggered the reversal
+        is evaluated against the OLD polarity (the one that was active when the candle opened).
+        """
         stats = self.streak_tracker.get_or_create_stats(symbol)
         stats.current_price = candle.close
 
-        # First, check for gap detection
+        # STEP 1: Evaluate current candle against the CURRENT active signal BEFORE gap detection
+        # This ensures reversals are counted correctly - the candle is judged by the signal
+        # that was active when it opened, not the new signal it triggers
+        polarity_for_evaluation = stats.current_signal_polarity
+        result = self.evaluate_candle(symbol, candle)
+
+        # STEP 2: Now check for gap detection (this may change the signal polarity)
         detector = self.gap_detectors[symbol]
         gap = detector.add_candle(candle)
 
@@ -828,7 +842,7 @@ class ExtGapSignalMonitor:
                 await self.telegram.notify_reversal(symbol, prev_polarity, polarity, gap["gap_level"])
 
             if is_first or is_reversal:
-                # New signal starts
+                # New signal starts - update polarity AFTER evaluation
                 stats.signal_active = True
                 stats.current_signal_polarity = polarity
                 if self.telegram:
@@ -844,18 +858,16 @@ class ExtGapSignalMonitor:
                 f"{polarity.upper()} gap #{gap['sequence']} at {gap['gap_level']:.4f}"
             )
 
-        # Evaluate current candle against active signal
-        result = self.evaluate_candle(symbol, candle)
-
+        # STEP 3: Now report the result (using the polarity that was active BEFORE the gap detection)
         if result is not None:
             # Update stats
             self.streak_tracker.update_result(symbol, result)
 
-            # Record to CSV
+            # Record to CSV - use the polarity that was active when candle was evaluated
             self.signal_recorder.record(
                 symbol=symbol,
                 time=candle.close_time,
-                gap_polarity=stats.current_signal_polarity or "unknown",
+                gap_polarity=polarity_for_evaluation or "unknown",
                 candle_open=candle.open,
                 candle_close=candle.close,
                 result=result,
@@ -863,11 +875,11 @@ class ExtGapSignalMonitor:
                 is_reversal=gap["is_reversal"] if gap else False,
             )
 
-            # Send result notification
+            # Send result notification - use the polarity that was active when candle was evaluated
             if self.telegram:
                 await self.telegram.notify_candle_result(
                     symbol=symbol,
-                    polarity=stats.current_signal_polarity or "unknown",
+                    polarity=polarity_for_evaluation or "unknown",
                     result=result,
                     candle_open=candle.open,
                     candle_close=candle.close,
